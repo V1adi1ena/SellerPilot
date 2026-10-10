@@ -1,31 +1,170 @@
+import pytest
 from fastapi.testclient import TestClient
-from main import app, products
+from main import app, engine, Product
+from decimal import Decimal
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from unittest.mock import patch
+from uuid import uuid4
 
 client = TestClient(app)
 
-def test_product_lifecycle():
-    products.clear()
 
+def test_product_lifecycle():
+    sku = f"TEST-{uuid4().hex[:12]}"
     product_data = {
-        "sku": "SKU-001",
+        "sku": sku,
         "title": "Running Shoes",
         "price": "29.99",
         "currency": "USD",
+        "stock": 5,
+    }
+    try:
+        create_response = client.post("/products", json=product_data)
+        assert create_response.status_code == 201
+        assert create_response.json()["sku"] == sku
+
+        detail_response = client.get(f"/products/{sku}")
+        assert detail_response.status_code == 200
+        assert detail_response.json()["title"] == "Running Shoes"
+
+        duplicate_response = client.post("/products", json=product_data)
+        assert duplicate_response.status_code == 409
+
+        update_response = client.put(
+            f"/products/{sku}",
+            json={
+                "title": "Updated Shoes",
+                "price": "39.99",
+                "currency": "EUR",
+                "stock": 5,
+            },
+        )
+        assert update_response.status_code == 200
+
+        updated_response = client.get(f"/products/{sku}")
+        assert updated_response.status_code == 200
+
+        updated_product = updated_response.json()
+        assert updated_product["sku"] == sku
+        assert updated_product["title"] == "Updated Shoes"
+        assert Decimal(str(updated_product["price"])) == Decimal("39.99")
+        assert updated_product["currency"] == "EUR"
+        assert updated_product["stock"] == 5
+
+        delete_response = client.delete(f"/products/{sku}")
+        assert delete_response.status_code == 204
+
+        missing_response = client.get(f"/products/{sku}")
+        assert missing_response.status_code == 404
+
+    finally:
+        client.delete(f"/products/{sku}")
+
+def test_reject_negative_price():
+    response = client.post(
+        "/products",
+        json={
+            "sku": "SKU-NEG",
+            "title": "Running Shoes",
+            "price": "-10",
+            "currency": "USD",
+        },
+    )
+
+    assert response.status_code == 422
+    missing_response = client.get("/products/SKU-NEG")
+    assert missing_response.status_code == 404
+
+def test_handle_integrity_error():
+    sku = f"TEST-{uuid4().hex[:12]}"
+
+    with patch( # 只能说明当出现IntegrityError时会返回409
+        "main.Session.commit",
+        side_effect=IntegrityError("INSERT", {}, Exception("test")),
+    ), patch("main.Session.rollback") as rollback_mock:
+        response = client.post(
+            "/products",
+            json={
+                "sku": sku,
+                "title": "Test Product",
+                "price": "10.00",
+                "currency": "USD",
+            },
+        )
+
+        assert response.status_code == 409
+        rollback_mock.assert_called_once()
+
+def test_database_sku_unique():
+    sku = f"TEST-{uuid4().hex[:12]}"
+    try:
+        with Session(engine) as session:
+            first_product = Product(
+                sku=sku,
+                title="First Product",
+                price="10.00",
+                currency="USD",
+            )
+            session.add(first_product)
+            session.commit()
+
+            second_product = Product(
+                sku=sku,
+                title="Second Product",
+                price="20.00",
+                currency="USD",
+            )
+            session.add(second_product)
+
+            with pytest.raises(IntegrityError):
+                session.commit()
+
+            session.rollback()
+    finally:
+        with Session(engine) as session:
+            product = session.scalar(
+                select(Product).where(Product.sku == sku)
+            )
+            if product is not None:
+                session.delete(product)
+                session.commit()
+
+def test_update_requires_all_fields():
+    response = client.put(
+        "/products/TEST-MISSING-FIELDS",
+        json={"price": "19.99"},
+    )
+
+    assert response.status_code == 422
+
+    errors = response.json()["detail"]
+    missing_fields = {
+        error["loc"][-1]
+        for error in errors
+        if error["type"] == "missing"
     }
 
-    create_response = client.post("/products", json=product_data)
-    assert create_response.status_code == 201
-    assert create_response.json()["sku"] == "SKU-001"
+    assert missing_fields == {"title", "currency", "stock"}
 
-    list_response = client.get("/products")
-    assert list_response.status_code == 200
-    assert len(list_response.json()) == 1
+def test_reject_price_with_too_many_decimal_places():
+    response = client.post(
+        "/products",
+        json={
+            "sku": f"TEST-{uuid4().hex[:12]}",
+            "title": "Test Product",
+            "price": "19.999",
+            "currency": "USD",
+        },
+    )
 
-    duplicate_response = client.post("/products", json=product_data)
-    assert duplicate_response.status_code == 409
+    assert response.status_code == 422
 
-    delete_response = client.delete("/products/SKU-001")
-    assert delete_response.status_code == 204
+    errors = response.json()["detail"]
+    assert any(
+        error["loc"] == ["body", "price"]
+        and error["type"] == "decimal_max_places"
+        for error in errors
+    )
 
-    missing_response = client.get("/products/SKU-001")
-    assert missing_response.status_code == 404
