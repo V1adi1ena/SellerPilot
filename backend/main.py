@@ -1,4 +1,6 @@
 from fastapi import FastAPI, Query, Path, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jwt.exceptions import InvalidTokenError
 from decimal import Decimal
 from pydantic import BaseModel, Field, ConfigDict
 import os
@@ -8,7 +10,40 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from database import  engine, get_db
-from models import Product
+from models import Product, Store, User
+from secuity import hash_password, verify_password, create_access_token, decode_access_token
+
+bearer_scheme = HTTPBearer(auto_error=False)
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(
+        bearer_scheme
+    ),
+    session: Session = Depends(get_db),
+):
+    auth_error = HTTPException(
+        status_code=401,
+        detail="登录凭证无效或已过期",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if credentials is None:
+        raise auth_error
+
+    try:
+        payload = decode_access_token(credentials.credentials)
+        user_id = int(payload["sub"])
+
+        if user_id < 1:
+            raise ValueError("无效用户 ID")
+
+    except (InvalidTokenError, ValueError, KeyError, TypeError):
+        raise auth_error
+
+    user = session.get(User, user_id)
+    if user is None:
+        raise auth_error
+
+    return user
 
 app = FastAPI()
 
@@ -25,6 +60,7 @@ class ProductCreate(BaseModel):
     price: Decimal = Field(ge=0, max_digits=18, decimal_places=2)
     currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
     stock: int = Field(default=0, ge=0)
+    store_id: int|None = Field(default=None, ge=1)
 class ProductUpdate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     price: Decimal = Field(ge=0, max_digits=18, decimal_places=2)
@@ -38,6 +74,36 @@ class ProductRead(BaseModel):
     price: Decimal
     currency: str
     stock: int
+    store_id: int|None
+
+class StoreCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    platform: str = Field(pattern=r"^(amazon|shopify)$")
+class StoreRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    platform: str
+    owner_id: int|None
+
+class UserCreate(BaseModel):
+    username: str = Field(
+        min_length=3,
+        max_length=50,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+    password: str = Field(min_length=8, max_length=128)
+class UserRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    username: str    
+class UserLogin(BaseModel):
+    username: str = Field(min_length=3, max_length=50)
+    password: str = Field(min_length=1, max_length=128)
+
+class TokenRead(BaseModel):
+    access_token: str
+    token_type: str
 
 @app.get("/hello")
 def hello():
@@ -54,13 +120,17 @@ def create_database_product(product: ProductCreate, session: Session = Depends(g
     )
     if existing_product is not None:
         raise HTTPException(status_code=409, detail="数据库中已存在该 SKU")
-
+    if product.store_id is not None:
+        store = session.get(Store, product.store_id)
+        if store is None: 
+            raise HTTPException(status_code=404, detail="店铺不存在")
     database_product = Product(
         sku=product.sku,
         title=product.title,
         price=product.price,
         currency=product.currency,
         stock=product.stock,
+        store_id = product.store_id
     )
 
     session.add(database_product)
@@ -74,11 +144,13 @@ def create_database_product(product: ProductCreate, session: Session = Depends(g
 
 @app.get("/products", response_model=list[ProductRead])
 def list_database_products(limit:int=Query(default=10, ge=1, le=100),
+                           store_id:int|None=Query(default=None, ge=1),
                            session: Session = Depends(get_db)):
-    statement = select(Product).order_by(Product.id).limit(limit)
-    database_products = session.scalars(statement).all()
-
-    return database_products
+    statement = select(Product)
+    if store_id is not None:
+        statement = statement.where(Product.store_id == store_id)
+    statement = statement.order_by(Product.id).limit(limit)
+    return session.scalars(statement).all()
 
 @app.get("/products/{sku}", response_model=ProductRead)
 def get_database_product(sku: str = Path(
@@ -126,4 +198,108 @@ def updata_product(product_data: ProductUpdate,
 
     return product
 
+@app.post("/stores", status_code=201, response_model=StoreRead)
+def create_store(
+    store_data: StoreCreate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_db),
+):
+    store = Store(
+        name=store_data.name,
+        platform=store_data.platform,
+        owner_id=current_user.id
+    )
 
+    session.add(store)
+    session.commit()
+    session.refresh(store)
+
+    return store
+
+@app.get("/stores", response_model=list[StoreRead])
+def list_stores(
+    limit: int = Query(default=10, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_db),
+):
+    statement = (select(Store)
+                 .where(Store.owner_id == current_user.id)
+                 .order_by(Store.id)
+                 .limit(limit)
+    )
+    return session.scalars(statement).all()
+
+
+@app.get("/stores/{store_id}", response_model=StoreRead)
+def get_store(
+    store_id: int = Path(ge=1),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_db),
+):
+    store = session.scalar(
+        select(Store)
+        .where(
+            Store.id == store_id,
+            Store.owner_id == current_user.id)
+    )
+    if store is None:
+        raise HTTPException(status_code=404, detail="店铺不存在")
+
+    return store
+
+
+@app.post("/auth/register", status_code=201, response_model=UserRead)
+def register_user(
+    user_data: UserCreate,
+    session: Session=Depends(get_db)
+):
+    existing_user = session.scalar(
+        select(User).where(User.username==user_data.username)
+    )
+    if existing_user is not None:
+        raise HTTPException(status_code=409, detail="用户名已经存在")
+
+    user = User(
+        username = user_data.username,
+        password_hash = hash_password(user_data.password),
+    )
+    session.add(user)
+
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="用户名已存在")
+
+    session.refresh(user)
+    return user
+
+@app.post("/auth/login", response_model=TokenRead)
+def login_user(
+    login_data: UserLogin,
+    session: Session = Depends(get_db),
+):
+    user = session.scalar(
+        select(User).where(User.username == login_data.username)
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="用户名或密码错误",
+        )
+
+    if not verify_password(login_data.password, user.password_hash):
+        raise HTTPException(
+            status_code=401,
+            detail="用户名或密码错误",
+        )
+
+    return {
+        "access_token": create_access_token(user.id),
+        "token_type": "bearer",
+    }
+
+@app.get("/auth/me", response_model=UserRead)
+def read_current_user(current_user: User = Depends(get_current_user)):
+    return current_user

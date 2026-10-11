@@ -1,12 +1,34 @@
 import pytest
 from fastapi.testclient import TestClient
-from main import app, engine, Product
+
+from main import app
+from models import Product, Store
+from database import database_url, get_db
+
 from decimal import Decimal
-from sqlalchemy import select
+from sqlalchemy import create_engine, select, delete
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from unittest.mock import patch
 from uuid import uuid4
+
+test_engine = create_engine(
+    database_url.set(database="sellerpilot_test")
+)
+
+
+def override_get_db():
+    with Session(test_engine) as session:
+        yield session
+
+
+@pytest.fixture(autouse=True)
+def use_test_database():
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_db, None)
 
 client = TestClient(app)
 
@@ -100,7 +122,7 @@ def test_handle_integrity_error():
 def test_database_sku_unique():
     sku = f"TEST-{uuid4().hex[:12]}"
     try:
-        with Session(engine) as session:
+        with Session(test_engine) as session:
             first_product = Product(
                 sku=sku,
                 title="First Product",
@@ -123,7 +145,7 @@ def test_database_sku_unique():
 
             session.rollback()
     finally:
-        with Session(engine) as session:
+        with Session(test_engine) as session:
             product = session.scalar(
                 select(Product).where(Product.sku == sku)
             )
@@ -167,4 +189,54 @@ def test_reject_price_with_too_many_decimal_places():
         and error["type"] == "decimal_max_places"
         for error in errors
     )
+
+def test_filter_products_by_store():
+    store_ids = []
+    skus = []
+
+    try:
+        for name in ["Test Store A", "Test Store B"]:
+            store_response = client.post(
+                "/stores",
+                json={"name": name, "platform": "amazon"},
+            )
+            assert store_response.status_code == 201
+
+            store_id = store_response.json()["id"]
+            store_ids.append(store_id)
+
+            sku = f"TEST-{uuid4().hex[:12]}"
+            skus.append(sku)
+
+            product_response = client.post(
+                "/products",
+                json={
+                    "sku": sku,
+                    "title": "Test Product",
+                    "price": "10.00",
+                    "store_id": store_id,
+                },
+            )
+            assert product_response.status_code == 201
+
+        response = client.get(
+            "/products",
+            params={"store_id": store_ids[0]},
+        )
+        assert response.status_code == 200
+
+        products = response.json()
+        assert len(products) == 1
+        assert products[0]["sku"] == skus[0]
+        assert products[0]["store_id"] == store_ids[0]
+
+    finally:
+        with Session(test_engine) as session:
+            session.execute(
+                delete(Product).where(Product.sku.in_(skus))
+            )
+            session.execute(
+                delete(Store).where(Store.id.in_(store_ids))
+            )
+            session.commit()
 
