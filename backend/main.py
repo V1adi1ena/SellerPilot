@@ -32,7 +32,6 @@ def get_current_user(
     try:
         payload = decode_access_token(credentials.credentials)
         user_id = int(payload["sub"])
-
         if user_id < 1:
             raise ValueError("无效用户 ID")
 
@@ -60,7 +59,7 @@ class ProductCreate(BaseModel):
     price: Decimal = Field(ge=0, max_digits=18, decimal_places=2)
     currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
     stock: int = Field(default=0, ge=0)
-    store_id: int|None = Field(default=None, ge=1)
+    store_id: int = Field(ge=1)
 class ProductUpdate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     price: Decimal = Field(ge=0, max_digits=18, decimal_places=2)
@@ -105,6 +104,12 @@ class TokenRead(BaseModel):
     access_token: str
     token_type: str
 
+def owned_products_query(user_id:int):
+    return (select(Product)
+            .join(Store, Product.store_id == Store.id)
+            .where(Store.owner_id == user_id)
+    )
+
 @app.get("/hello")
 def hello():
     return {"message": "Hello, SellerPilot"}
@@ -114,16 +119,24 @@ def greet(name: str):
     return {"message": f"Hello, {name}"}
 
 @app.post("/products", status_code=201, response_model=ProductRead)
-def create_database_product(product: ProductCreate, session: Session = Depends(get_db)):
+def create_database_product(product: ProductCreate,
+                            session: Session = Depends(get_db),
+                            current_user: User = Depends(get_current_user),
+                            ):
+    store = session.scalar(
+        select(Store).where(
+            Store.id == product.store_id,
+            Store.owner_id == current_user.id,
+        )
+    )
+    if store is None: 
+            raise HTTPException(status_code=404, detail="店铺不存在")
     existing_product = session.scalar(
         select(Product).where(Product.sku == product.sku)
     )
     if existing_product is not None:
         raise HTTPException(status_code=409, detail="数据库中已存在该 SKU")
-    if product.store_id is not None:
-        store = session.get(Store, product.store_id)
-        if store is None: 
-            raise HTTPException(status_code=404, detail="店铺不存在")
+        
     database_product = Product(
         sku=product.sku,
         title=product.title,
@@ -145,8 +158,10 @@ def create_database_product(product: ProductCreate, session: Session = Depends(g
 @app.get("/products", response_model=list[ProductRead])
 def list_database_products(limit:int=Query(default=10, ge=1, le=100),
                            store_id:int|None=Query(default=None, ge=1),
-                           session: Session = Depends(get_db)):
-    statement = select(Product)
+                           session: Session = Depends(get_db),
+                           current_user: User = Depends(get_current_user),
+                           ):
+    statement = owned_products_query(current_user.id)
     if store_id is not None:
         statement = statement.where(Product.store_id == store_id)
     statement = statement.order_by(Product.id).limit(limit)
@@ -158,8 +173,10 @@ def get_database_product(sku: str = Path(
                             max_length=30,
                             pattern = r"^[A-Za-z0-9-]+$" 
                         ),
-                        session: Session = Depends(get_db)):
-    product = session.scalar(select(Product).where(Product.sku == sku))
+                        session: Session = Depends(get_db),
+                        current_user: User = Depends(get_current_user),):
+    statement = owned_products_query(current_user.id).where(Product.sku == sku)
+    product = session.scalar(statement)
     if product is None:
         raise HTTPException(status_code=404, detail="商品不存在")
     return product
@@ -167,8 +184,10 @@ def get_database_product(sku: str = Path(
 @app.delete("/products/{sku}", status_code=204)
 def delete_database_product(sku: str = Path(
         min_length=3, max_length=30, pattern=r"^[A-Za-z0-9-]+$"),
-        session: Session = Depends(get_db)):
-    statement = select(Product).where(Product.sku == sku)
+        session: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+    ):
+    statement = owned_products_query(current_user.id).where(Product.sku == sku)
     product = session.scalar(statement)
 
     if product is None:
@@ -183,8 +202,11 @@ def updata_product(product_data: ProductUpdate,
                        max_length=30,
                        pattern=r"^[A-Za-z0-9-]+$",
                    ),
-                   session: Session = Depends(get_db)):
-    product = session.scalar(select(Product).where(Product.sku == sku))
+                   session: Session = Depends(get_db),
+                   current_user: User = Depends(get_current_user),
+                   ):
+    statement = owned_products_query(current_user.id).where(Product.sku == sku)
+    product = session.scalar(statement)
     if product is None:
         raise HTTPException(status_code=404, detail="商品不存在")
 
@@ -229,7 +251,6 @@ def list_stores(
     )
     return session.scalars(statement).all()
 
-
 @app.get("/stores/{store_id}", response_model=StoreRead)
 def get_store(
     store_id: int = Path(ge=1),
@@ -246,7 +267,6 @@ def get_store(
         raise HTTPException(status_code=404, detail="店铺不存在")
 
     return store
-
 
 @app.post("/auth/register", status_code=201, response_model=UserRead)
 def register_user(
