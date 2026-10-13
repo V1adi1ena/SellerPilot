@@ -1,8 +1,24 @@
-from fastapi import FastAPI, Query, Path, HTTPException, Depends
+from fastapi import (
+    FastAPI,
+    Query, 
+    Path,
+    HTTPException,
+    Depends,
+    File, 
+    UploadFile,
+)
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jwt.exceptions import InvalidTokenError
+from imports import(
+    MAX_FILE_BYTES,
+    CsvImportError,
+    ImportConflictError,
+    import_orders_csv,
+)
 from decimal import Decimal
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Literal
+from pydantic import BaseModel, Field, ConfigDict, AwareDatetime
+
 import os
 from dotenv import load_dotenv
 from sqlalchemy import URL, create_engine, text, select
@@ -12,6 +28,9 @@ from sqlalchemy.exc import IntegrityError
 from database import  engine, get_db
 from models import Product, Store, User
 from secuity import hash_password, verify_password, create_access_token, decode_access_token
+from services import StoreNotFoundError, list_low_stock_products
+from order_items_import import parse_order_items_csv, import_order_items_csv
+from analytics import list_product_sales, list_store_orders, summarize_sales
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -323,3 +342,178 @@ def login_user(
 @app.get("/auth/me", response_model=UserRead)
 def read_current_user(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@app.get(
+    "/stores/{store_id}/products/low-stock",
+    response_model=list[ProductRead],
+)
+def get_low_stock_products(
+    store_id: int = Path(ge=1),
+    threshold: int = Query(default=10, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return list_low_stock_products(
+            session,
+            user_id=current_user.id,
+            store_id=store_id,
+            threshold=threshold,
+            limit=limit,
+        )
+    except StoreNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
+
+@app.post("/stores/{store_id}/imports/orders")
+def upload_orders_csv(
+    store_id: int = Path(ge=1),
+    file: UploadFile = File(...),
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        if not file.filename or not file.filename.lower().endswith(".csv"):
+            raise HTTPException(
+                status_code=422,
+                detail="请上传 .csv 文件",
+            )
+
+        content = file.file.read(MAX_FILE_BYTES + 1)
+
+        return import_orders_csv(
+            session,
+            user_id=current_user.id,
+            store_id=store_id,
+            content=content,
+        )
+
+    except StoreNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+
+    except CsvImportError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(exc),
+                "errors": exc.errors,
+            },
+        ) from exc
+
+    except ImportConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+@app.post("/stores/{store_id}/imports/order-items")
+def upload_order_items_csv(
+    store_id: int = Path(ge=1),
+    file: UploadFile = File(...),
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        if not file.filename or not file.filename.lower().endswith(".csv"):
+            raise HTTPException(
+                status_code=422,
+                detail="请上传 .csv 文件",
+            )
+
+        content = file.file.read(MAX_FILE_BYTES + 1)
+
+        return import_order_items_csv(
+            session,
+            user_id=current_user.id,
+            store_id=store_id,
+            content=content,
+        )
+
+    except StoreNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+
+    except CsvImportError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(exc),
+                "errors": exc.errors,
+            },
+        ) from exc
+
+    except ImportConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/stores/{store_id}/orders")
+def get_store_orders(
+    store_id: int = Path(ge=1),
+    start_at: AwareDatetime = Query(...),
+    end_at: AwareDatetime = Query(...),
+    status: Literal["pending", "paid", "shipped", "cancelled"] | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=2147483647),
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return list_store_orders(session, user_id=current_user.id, store_id=store_id,
+            start_at=start_at, end_at=end_at, status=status, limit=limit, offset=offset)
+    except StoreNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/stores/{store_id}/sales/summary")
+def get_sales_summary(
+    store_id: int = Path(ge=1),
+    start_at: AwareDatetime = Query(...),
+    end_at: AwareDatetime = Query(...),
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return summarize_sales(session, user_id=current_user.id, store_id=store_id,
+                               start_at=start_at, end_at=end_at)
+    except StoreNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/stores/{store_id}/sales/products")
+def get_product_sales(
+    store_id: int = Path(ge=1),
+    start_at: AwareDatetime = Query(...),
+    end_at: AwareDatetime = Query(...),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=2147483647),
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return list_product_sales(session, user_id=current_user.id, store_id=store_id,
+            start_at=start_at, end_at=end_at, limit=limit, offset=offset)
+    except StoreNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

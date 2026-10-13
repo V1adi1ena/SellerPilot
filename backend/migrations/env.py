@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 
 from database import Base, engine
-from models import Product, Store, User
+from models import Product, Store, User, Order, OrderItem, ImportJob
 from alembic import context
 
 # this is the Alembic Config object, which provides
