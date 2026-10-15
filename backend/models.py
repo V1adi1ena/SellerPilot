@@ -2,7 +2,7 @@ from decimal import Decimal
 from datetime import datetime
 
 from sqlalchemy import (
-    Numeric, String, ForeignKey,
+    JSON, Numeric, String, ForeignKey,
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
@@ -173,4 +173,18 @@ class ImportJob(Base):
             name="uq_import_jobs_store_kind_hash",
         ),
     )
+
+
+class AgentConversation(Base):
+    __tablename__ = "agent_conversations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", name="fk_agent_conversations_user_id"),
+    )
+    store_id: Mapped[int] = mapped_column(
+        ForeignKey("store.id", name="fk_agent_conversations_store_id"),
+    )
+    history: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    version: Mapped[int] = mapped_column(default=0, server_default="0")
 

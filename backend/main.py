@@ -31,6 +31,14 @@ from secuity import hash_password, verify_password, create_access_token, decode_
 from services import StoreNotFoundError, list_low_stock_products
 from order_items_import import parse_order_items_csv, import_order_items_csv
 from analytics import list_product_sales, list_store_orders, summarize_sales
+from llm import ModelError
+from agent import AgentError, run_store_agent
+from conversations import (
+    ConversationConflictError,
+    ConversationError,
+    ConversationNotFoundError,
+    run_conversation_agent,
+)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -63,7 +71,7 @@ def get_current_user(
 
     return user
 
-app = FastAPI()
+app = FastAPI(swagger_ui_parameters={"persistAuthorization":True})
 
 @app.get("/database-check")
 def database_check():
@@ -517,3 +525,46 @@ def get_product_sales(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+class AgentQuestion(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    message: str=Field(min_length=1, max_length=2000)
+    conversation_id:int|None=Field(default=None, ge=1, strict=True)
+
+
+# query_store_agent        接收请求，取得登录用户和地址中的店铺编号
+#         ↓
+# run_conversation_agent   检查权限、读取会话历史
+#         ↓
+# run_store_agent          组织消息，请模型选择工具
+#         ↓
+# execute_tool             校验工具名称和参数，执行对应函数
+#         ↓
+# summarize_sales          再次检查权限，查询销售汇总
+@app.post("/store/{store_id}/agent/query")
+def query_store_agent(
+    body: AgentQuestion,
+    store_id: int=Path(ge=1),
+    session: Session=Depends(get_db),
+    current_usr: User=Depends(get_current_user),
+):
+    try:
+        return run_conversation_agent(
+            session,
+            user_id=current_usr.id,
+            store_id=store_id,
+            question=body.message,
+            conversation_id=body.conversation_id,
+        )
+    except (StoreNotFoundError, ConversationNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConversationConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ConversationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (ModelError, AgentError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    
+    

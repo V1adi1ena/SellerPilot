@@ -24,16 +24,19 @@ def load_llm_config() -> tuple[str, str, str]:
     return base_url.rstrip("/"), model, api_key
 
 
-def chat(messages: list[dict]) -> dict:
+def chat(messages: list[dict], *, tools: list[dict] | None = None) -> dict:
     base_url, model, api_key = load_llm_config()
 
     payload = {
         "model": model,
         "messages": messages,
         "thinking": {"type": "disabled"},
-        "max_tokens": 512,
+        "max_tokens": 1024,
         "stream": False,
     }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
     headers = {"Authorization": f"Bearer {api_key}"}
 
     try:
@@ -61,18 +64,38 @@ def chat(messages: list[dict]) -> dict:
         choice = response.json()["choices"][0]
         message = choice["message"]
         finish_reason = choice["finish_reason"]
-        content = message["content"]
-        valid_message = (
-            message.get("role") == "assistant"
-            and isinstance(content, str)
-            and bool(content.strip())
-        )
+        content = message.get("content")
+        tool_calls = message.get("tool_calls") or []
     except (ValueError, KeyError, IndexError, TypeError, AttributeError):
         raise ModelError("模型返回的数据格式不符合预期") from None
 
-    if finish_reason != "stop":
+    if message.get("role") != "assistant":
+        raise ModelError("模型返回的消息角色不符合预期")
+
+    if finish_reason == "tool_calls":
+        if not tools or not isinstance(tool_calls, list) or not tool_calls:
+            raise ModelError("模型返回了无效的工具调用")
+        ids = set()
+        for call in tool_calls:
+            if not isinstance(call, dict) or not isinstance(call.get("function"), dict):
+                raise ModelError("模型返回的工具调用格式无效")
+            function = call["function"]
+            call_id = call.get("id")
+            if (
+                call.get("type") != "function"
+                or not isinstance(call_id, str) or not call_id
+                or call_id in ids
+                or not isinstance(function.get("name"), str) or not function["name"]
+                or not isinstance(function.get("arguments"), str)
+                or (content is not None and not isinstance(content, str))
+            ):
+                raise ModelError("模型返回的工具调用字段无效")
+            ids.add(call_id)
+        return {"role": "assistant", "content": content, "tool_calls": tool_calls}
+
+    if finish_reason != "stop" or tool_calls:
         raise ModelError("模型未正常完成回复，可能达到输出限制或被服务中断")
-    if not valid_message:
+    if not isinstance(content, str) or not content.strip():
         raise ModelError("模型没有返回有效的文字回复")
 
-    return message
+    return {"role": "assistant", "content": content}

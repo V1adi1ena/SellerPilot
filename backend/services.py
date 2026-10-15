@@ -7,7 +7,7 @@ from models import Product, Store
 class StoreNotFoundError(Exception):
     """店铺不存在，或当前用户无权访问。"""
 
-
+# 查询店铺：由于storeid是用户可改的，必须在这里检查是否是用户拥有的店铺
 def require_owned_store(
     session: Session,
     *,
