@@ -24,7 +24,9 @@ def load_llm_config() -> tuple[str, str, str]:
     return base_url.rstrip("/"), model, api_key
 
 
-def chat(messages: list[dict], *, tools: list[dict] | None = None) -> dict:
+def chat(
+    messages: list[dict], *, tools: list[dict] | None = None, json_mode: bool = False,
+) -> dict:
     base_url, model, api_key = load_llm_config()
 
     payload = {
@@ -37,6 +39,9 @@ def chat(messages: list[dict], *, tools: list[dict] | None = None) -> dict:
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
+    if json_mode:
+        # JSON模式只约束输出格式；字段、引用和业务规则仍由后端校验。
+        payload["response_format"] = {"type": "json_object"}
     headers = {"Authorization": f"Bearer {api_key}"}
 
     try:
