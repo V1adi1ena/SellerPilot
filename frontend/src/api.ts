@@ -87,3 +87,52 @@ export function askAgent(
     signal,
   })
 }
+
+export interface Product {
+  id: number
+  sku: string
+  title: string
+  price: string
+  currency: string
+  stock: number
+  store_id: number | null
+}
+
+export interface TitleDraft {
+  draft_id: number
+  store_id: number
+  product_id: number
+  original_title: string
+  proposed_title: string
+  status: 'pending' | 'applied'
+  created_at: string
+  created_by?: number
+  applied_by?: number | null
+  applied_at?: string | null
+}
+
+export function getProducts(storeId: number, signal: AbortSignal): Promise<Product[]> {
+  return request(`/products?store_id=${storeId}&limit=100`, { signal })
+}
+
+export function generateTitleDraft(
+  storeId: number, productId: number, signal: AbortSignal,
+): Promise<TitleDraft> {
+  return request(`/stores/${storeId}/products/${productId}/title-drafts`, {
+    method: 'POST', signal,
+  })
+}
+
+export function getTitleDraft(
+  storeId: number, draftId: number, signal: AbortSignal,
+): Promise<TitleDraft> {
+  return request(`/stores/${storeId}/title-drafts/${draftId}`, { signal })
+}
+
+export function confirmTitleDraft(
+  storeId: number, draftId: number, signal: AbortSignal,
+): Promise<TitleDraft> {
+  return request(`/stores/${storeId}/title-drafts/${draftId}/confirm`, {
+    method: 'POST', body: JSON.stringify({ confirmed: true }), signal,
+  })
+}

@@ -92,6 +92,30 @@ footer { padding: 22px 0; border-top: 1px solid var(--line); display: flex; just
 .chat-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 16px; }
 .chat-actions > span { color: var(--muted); font-size: 12px; }
 .chat-actions .primary-button { width: auto; padding: 0 24px; }
+.titles-panel { margin-top: 30px; background: white; border: 1px solid var(--line); border-radius: 12px; padding: 28px; }
+.title-products { max-height: 340px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; margin: 16px 0; }
+.title-product { display: flex; justify-content: space-between; align-items: center; gap: 16px; width: 100%; text-align: left; padding: 14px 16px; border: 0; border-bottom: 1px solid var(--line); background: white; color: inherit; }
+.title-product:last-child { border-bottom: 0; }
+.title-product.selected { box-shadow: inset 4px 0 var(--accent); background: #edf5f6; }
+.title-product > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.title-product strong { display: block; font-size: 14px; font-weight: 600; }
+.title-product small { display: block; margin-top: 5px; color: var(--muted); }
+.product-stock { flex-shrink: 0; font-size: 12px; color: var(--muted); }
+.generate-title, .apply-title { width: auto; padding: 0 20px; }
+.title-review { border-top: 1px solid var(--line); margin-top: 26px; padding-top: 22px; }
+.draft-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.draft-heading h3 { margin: 0; font-size: 16px; }
+.draft-heading > span { color: var(--accent); font-size: 13px; }
+.title-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 18px 0; }
+.title-comparison > div { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 6px; }
+.title-comparison > div:last-child { background: #f0f7f6; border-color: #b5d5d3; }
+.title-comparison h4 { margin: 0 0 12px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.title-comparison p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; }
+.review-check { display: flex; align-items: flex-start; gap: 9px; font-size: 14px; line-height: 1.7; margin: 18px 0; }
+.review-check input { margin-top: 5px; accent-color: var(--accent); }
+.check-draft { margin-left: 12px; }
+.title-success { color: #19634d; background: #eaf6ef; padding: 12px 16px; border-radius: 6px; font-size: 14px; }
+.title-success span { display: block; margin-top: 4px; font-size: 12px; }
 @media (max-width: 760px) {
   .app-shell { padding: 0 22px; }
   .topbar { min-height: 88px; }
@@ -105,5 +129,8 @@ footer { padding: 22px 0; border-top: 1px solid var(--line); display: flex; just
   .workspace { padding-top: 32px; }
   .store-option { padding: 15px; gap: 12px; }
   .chat-panel { padding: 20px 16px; }
+  .titles-panel { padding: 20px 16px; }
+  .title-comparison { grid-template-columns: 1fr; gap: 10px; }
+  .check-draft { display: block; margin-left: 0; margin-top: 12px; }
   footer { flex-wrap: wrap; }
 }
