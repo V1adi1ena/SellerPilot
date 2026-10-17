@@ -2,7 +2,7 @@
 
 SellerPilot 是面向跨境电商卖家的智能运营 Agent 学习项目，使用演示数据逐步实现商品管理、经营分析、政策检索与经确认的运营动作。
 
-截至 **2026-10-15**，Week 1 后端基础、Week 2 数据能力和只读 Agent 主流程已完成。Agent 使用 GLM，通过受限工具查询低库存、订单、销售汇总、商品销量及共享演示政策；支持有限对话历史、政策引用校验、资料不足状态和每次请求最多 3 次工具调用。用户已在 Swagger 确认本轮政策修复成功。政策问答仍基于项目自编的四条共享演示政策，不是完整知识库，也不能保证模型对引用的语义判断始终正确。
+截至 **2026-10-17**，已完成商品与店铺管理、经营数据导入和查询、GLM只读Agent、短对话与共享演示政策检索。标题草稿已支持生成、预览、用户明确确认后应用、重复确认回执与操作记录。React前端已接入登录、店铺选择、运营问答和政策引用展示；当前开发地址为 **http://127.0.0.1:5188**。用户已确认前端在5188运行成功，真实模型聊天的完整页面验收仍需单独记录。
 
 ## 当前进度与停点
 
@@ -14,16 +14,19 @@ SellerPilot 是面向跨境电商卖家的智能运营 Agent 学习项目，使�
 | 订单 CSV 导入 | 已验收 | 文件校验、UTC 转换、新增或更新、文件去重、版本递增、整批回滚 |
 | 明细 CSV 导入 | 已验收 | 店内订单与 SKU 关联、数量与退款校验、新增或更新、并发去重 |
 | 订单查询、销售汇总、商品销量 | 已验收 | 真实 HTTP、手算金额、日期边界、分页、多币种、缺明细与双账号隔离 |
-| GLM 接入 | 已实现 | OpenAI 兼容接口；配置从项目根目录 `.env` 读取，密钥不进入请求或日志输出 |
+| GLM 接入 | 已实现 | OpenAI兼容接口；后端从项目根目录.env读取密钥，不下发浏览器 |
 | 只读 Agent 工具 | 已实现 | 低库存、订单、销售汇总、商品销量和政策检索；工具白名单、参数重验、服务端注入用户与店铺身份 |
 | 对话会话 | 已实现 | 按用户和店铺隔离；保存有限问答历史，并用版本条件更新处理并发冲突 |
 | 演示政策检索 | 已实现并通过当前阶段验收 | 四条共享自编政策，词面检索、当前轮引用来源校验与资料不足状态；不代表真实平台政策 |
+| 标题草稿后端 | 已实现，用户报告完成 | 生成、预览、确认、旧标题冲突、幂等回执及单一动作记录 |
+| 前端登录与店铺选择 | 用户已运行成功 | React/Vite/TypeScript，5188端口，当前标签页保存JWT |
+| 前端运营问答 | 代码已接入并通过模拟浏览器验证 | 会话续接、切店隔离、引用原文、错误及过期处理；待记录真实GLM页面验收 |
 
-**当前停点：** Week 2 的导入与经营查询能力已完成。GLM 只读 Agent 和短对话会话已接入；政策检索支持多主题分轮补查、最多 3 次工具调用、JSON 格式答案、仅接受本次检索到的引用，并对资料不足返回固定拒答。用户已在 Swagger 确认修复后的政策查询可用。详细验证边界见“Agent 与政策检索”。下一阶段是明确产品范围后实现单一、需用户确认的运营修改动作，再补最小演示界面、部署说明和最终验收。
+**当前停点：** 已完成AgentChat代码讲解，覆盖useState、props、useRef、pending.current、AbortController和发送请求的状态变化。本次只更新文档。下次先用真实账号完成页面提问、追问与引用验收，再接商品列表及标题草稿预览/确认页面。标题确认目前通过独立API执行，未注册为模型可调用工具。
+
 ## 技术栈
 
-
-Python、FastAPI、Pydantic、SQLAlchemy、PyMySQL、MySQL 8.4、Alembic、pytest、HTTPX、Docker Compose、pwdlib/Argon2、PyJWT、python-multipart、GLM（OpenAI 兼容 API）。
+Python、FastAPI、Pydantic、SQLAlchemy、PyMySQL、MySQL 8.4、Alembic、pytest、HTTPX、Docker Compose、pwdlib/Argon2、PyJWT、python-multipart、GLM（OpenAI 兼容 API）、React、TypeScript、Vite。
 
 ## 项目结构
 
@@ -32,7 +35,7 @@ SellerPilot/
 ├── backend/
 │   ├── main.py                 # 请求/响应模型、认证依赖、HTTP 接口
 │   ├── database.py             # 数据库连接、Base、get_db
-│   ├── models.py               # 用户、店铺、商品、订单、明细、导入记录
+│   ├── models.py               # 用户、店铺、商品、订单、明细、导入记录、会话与标题草稿
 │   ├── services.py             # 店铺授权与低库存业务函数
 │   ├── imports.py              # 订单 CSV 解析与事务导入
 │   ├── order_items_import.py   # 明细 CSV 解析、关联校验与事务导入
@@ -42,10 +45,24 @@ SellerPilot/
 │   ├── conversations.py        # 对话历史读取、并发版本控制与事务保存
 │   ├── policy_search.py        # 共享演示政策的词面检索
 │   ├── policy_service.py       # 政策检索前的店铺归属校验
+│   ├── title_drafts.py         # 标题草稿生成、预览、确认与事务
 │   ├── secuity.py              # 密码哈希与 JWT 工具（当前文件名）
 │   ├── test_main.py            # 已纳入仓库的基础接口自动化测试
 │   ├── requirements.txt
 │   └── migrations/            # Alembic 配置入口与版本脚本
+├── frontend/
+│   ├── src/
+│   │   ├── main.tsx           # React挂载入口
+│   │   ├── App.tsx            # 登录、账号与当前店铺
+│   │   ├── AgentChat.tsx      # 当前店铺问答、引用与请求清理
+│   │   ├── api.ts             # fetch、JWT及API封装
+│   │   └── style.css          # 布局和手机适配
+│   ├── index.html
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── tsconfig.json
+│   ├── vite.config.ts         # 5188开发端口与/api代理
+│   └── README.md              # 前端流程、函数与验收说明
 ├── alembic.ini
 ├── compose.yaml                # MySQL 容器与持久化卷
 ├── .env.example
@@ -63,7 +80,7 @@ SellerPilot/
 | `get_db` | 为请求提供 Session，结束后关闭会话；不替业务函数自动提交写入 | 所有数据库接口 |
 | `get_current_user` | 验证 Bearer JWT，读取当前用户 | 需要登录的接口；提供可信 user_id |
 | `require_owned_store` | 同时按店铺 ID 和 owner_id 查询；查不到时抛业务异常 | 查询与导入共用的权限入口 |
-| `list_low_stock_products` | 校验阈值和数量，筛选库存小于阈值的商品，按库存及 ID 排序 | 低库存 API，后续库存工具 |
+| `list_low_stock_products` | 校验阈值和数量，筛选库存小于阈值的商品，按库存及 ID 排序 | 低库存 API 与 Agent 工具 |
 | `OrderCsvRow.parse_timestamp` | 要求时间含时区偏移，转换为 UTC 后用于 MySQL DATETIME | 订单 CSV 字段校验 |
 | `parse_orders_csv` | 解码 UTF-8、检查表头与记录数，用 Pydantic 验证每行并检查文件内重复订单号；不访问数据库 | 订单导入的预校验阶段 |
 | `import_orders_csv` | 授权、校验文件、锁定店铺、查重、新增或更新订单，将订单、导入记录及版本一次性提交 | 订单导入的事务边界 |
@@ -76,7 +93,7 @@ SellerPilot/
 | `money` | 将 Decimal 金额输出为两位小数字符串 | 销售汇总和商品销量响应 |
 | `context` | 组装店铺、UTC 起止时间、区间规则和数据版本 | 经营查询的公共响应字段 |
 | `list_store_orders` | 按店铺、时间、可选状态筛选，倒序排列，多取一条判断 has_more | 订单查询 API 与 Agent 工具 |
-| `summarize_sales` | 外连接订单与明细，按币种分组，用 COUNT DISTINCT 计订单数、SUM 计数量和金额，并识别无明细订单 | 销售汇总 API，后续经营工具 |
+| `summarize_sales` | 外连接订单与明细，按币种分组，用 COUNT DISTINCT 计订单数、SUM 计数量和金额，并识别无明细订单 | 销售汇总 API 与 Agent 工具 |
 | `list_product_sales` | 关联明细、订单和商品，按商品与订单币种分组，按销售件数排序 | 商品销量 API 与 Agent 工具 |
 | `chat` | 从 `.env` 读取模型配置，通过 HTTP 请求 GLM；统一处理超时、网络和服务端错误，可启用 JSON 输出模式 | `run_store_agent` 的模型请求 |
 | `execute_tool` | 只允许注册表中的工具；按工具对应的 Pydantic 模型重新校验参数，并传入服务端身份 | Agent 收到模型工具调用后 |
@@ -130,6 +147,18 @@ python -m uvicorn main:app --reload
 
 登录接口不会自动切换 Swagger 的授权令牌；双账号验证时需主动更换令牌。
 
+前端在另一个可见终端启动：
+
+```powershell
+cd D:\Project\SellerPilot\frontend
+npm ci
+npm run dev
+```
+
+打开 [前端工作台](http://127.0.0.1:5188)，使用已注册账号登录；前端当前还没有注册与创建店铺页面。前后端开发进程分别在各自终端按Ctrl+C停止。5188是当前配置，启用strictPort后端口被占用会直接报错。
+
+模型配置位于项目根目录.env：LLM_BASE_URL、LLM_MODEL、LLM_API_KEY由后端读取。前端只保存登录JWT，模型密钥不写入前端代码或Vite环境变量。前端详细说明见 [frontend/README.md](frontend/README.md)。
+
 ## API
 
 | 方法 | 路径 | 功能 |
@@ -152,8 +181,11 @@ python -m uvicorn main:app --reload
 | GET | `/stores/{store_id}/sales/summary` | 按币种汇总经营指标 |
 | GET | `/stores/{store_id}/sales/products` | 商品销量排行 |
 | POST | `/store/{store_id}/agent/query` | 查询只读 Agent；可提交可选 `conversation_id` 延续会话 |
+| POST | `/stores/{store_id}/products/{product_id}/title-drafts` | 根据现有标题生成并保存pending草稿，返回201 |
+| GET | `/stores/{store_id}/title-drafts/{draft_id}` | 预览自己的草稿或查看应用回执 |
+| POST | `/stores/{store_id}/title-drafts/{draft_id}/confirm` | 明确确认后应用标题；旧标题不匹配返回409 |
 
-请求体示例：
+Agent请求体示例：
 
 ```json
 {
@@ -260,15 +292,49 @@ Agent API 为 `POST /store/{store_id}/agent/query`。请求包含 `message`，�
 - 用户确认已复制后，在 Swagger 成功验证修复。以上结果不构成语义正确率保证；最终候选版没有重跑完整 12 题集。
 
 验证报告、测试脚本和阶段修复说明保存在本次协作工作目录的 `sellerpilot_policy_evaluation/`、`sellerpilot_policy_fix_step/` 等文件夹，目前未加入 SellerPilot 仓库。
+
+## 标题草稿与确认
+
+`title_drafts.py`将生成与应用分开：生成只保存pending草稿，用户查看后再通过独立确认API修改商品。当前没有把确认操作注册为Agent工具。
+
+| 函数 | 作用与事务 |
+| --- | --- |
+| `generate_title_suggestion` | 根据原标题请求一次GLM，校验JSON、字符串长度和是否有变化；不访问数据库 |
+| `create_product_title_draft` | 先验证店铺与商品归属，再生成并保存草稿；负责提交与失败回滚，不更新商品 |
+| `title_draft_result` | 格式化草稿与应用回执，不执行SQL |
+| `get_product_title_draft` | 按用户、店铺、草稿ID读取，供预览和查看结果；只读 |
+| `confirm_product_title_draft` | 要求confirmed为true，锁定草稿与商品，核对原标题，将标题与应用记录在同一事务提交 |
+
+确认请求体为 `{"confirmed": true}`。只有草稿创建者能在自己店铺确认；商品ID是数字id。待确认草稿要求商品当前标题与original_title精确相同，否则409；此检查比较当前值，不追踪改动后又改回的历史。
+
+MySQL通过FOR UPDATE读取当前记录并加锁，populate_existing刷新ORM缓存对象。已applied的草稿直接返回原回执，不再次修改商品；即使后来手动改过标题，重试也不会撤销后来修改。应用时间与现有DATETIME秒精度对齐，确保首次与重试回执一致。
+
+草稿表同时充当这一动作的最小操作记录：原标题、建议标题、创建者、状态与应用时间。因只允许创建者确认，applied_by由created_by确定。这不覆盖所有商品CRUD或导入操作，也不是通用审计系统。草稿生成请求尚未去重；幂等保证针对同一draft_id的确认。
+
+用户已报告标题生成与确认步骤完成。27项本地测试及三个真实MySQL并发/重试场景通过，临时样本已清理；这些不等于本轮文档更新重跑了HTTP验收。后端仅校验标题格式与长度，建议内容仍需人工审阅。
+
+## 前端工作台
+
+当前前端使用React、Vite与TypeScript，开发端口为5188。App管理账号和选中店铺；AgentChat通过props接收店铺与登录过期回调，独立管理问答。按用户ID和店铺ID设置组件key，切换店铺会重建聊天状态。
+
+api.ts统一附带Bearer JWT并处理HTTP错误。浏览器请求 `/api/...`，Vite开发代理去掉/api后转发至127.0.0.1:8000。Agent接口仍是单数路径 `/store/{store_id}/agent/query`。开发代理不代替生产部署的API转发配置。
+
+首次提问不带conversation_id，成功后保存后端返回的ID供追问。政策引用可展开查看原文，答案和原文按普通文本展示。页面使用完整HTTP回复，尚无SSE逐字输出。前端useState保存页面状态，useRef保存当前请求控制器；卸载时取消浏览器等待并忽略旧回复，不保证取消后端已开始的模型处理或保存。
+
+JWT保存在当前标签页sessionStorage，刷新后重新验证身份，不保存密码。401清理账号与聊天；退出是浏览器清理，已签发JWT仍按到期规则失效。刷新页面、切换店铺或退出后不恢复旧页面聊天，后端会话仍保留；成功刷新同一店铺列表会保留当前聊天。网络中断后的重试尚无请求级幂等保证。
+
+用户确认已在5188运行前端。登录与聊天已完成类型检查、构建和模拟浏览器流程检查；真实账号与GLM的完整页面验收尚未明确记录。当前前端还未接商品管理、CSV上传、标题草稿预览与确认，下一步从真实聊天验收和草稿页面继续。
+
 ## 迁移与验证记录
 
-数据导入相关迁移为 **`1ae0fe8ad4e4`**。对话功能新增迁移 **`b6e4d2c81a90`**，创建按用户和店铺关联的 Agent 会话表。使用含对话表的数据库前需执行 `python -m alembic upgrade head`。
+当前代码包含标题草稿迁移 **`d6c7744dd9bc`**，父版本为会话迁移 `b6e4d2c81a90`。启动含草稿功能的环境前执行 `python -m alembic upgrade head`；本轮文档更新未连接数据库复核迁移状态。
 
 新增迁移：
 
 - `d741de3672aa`：订单、订单明细，以及商品联合唯一约束。
 - `1ae0fe8ad4e4`：导入记录、店铺 data_version。
 - `b6e4d2c81a90`：Agent 对话记录及用户、店铺关联。
+- `d6c7744dd9bc`：商品标题草稿、归属外键和状态约束。
 
 测试库使用同一 MySQL 实例中的 `sellerpilot_test`，需提前创建并授权，再从项目根目录升级：
 
@@ -284,7 +350,7 @@ python -m alembic current
 python -m alembic check
 ```
 
-验证记录如下；2026-10-15 新增当前运行服务的经营查询验收，并重新执行 8 项基础接口测试；其余为之前的阶段记录：
+以下为历史阶段验证记录，本轮只核对代码、已有报告与文档，未重跑业务或模型测试。不同验证方式应分开理解：
 
 | 验证范围 | 最近记录 | 验证方式 |
 | --- | --- | --- |
@@ -295,16 +361,20 @@ python -m alembic check
 | 明细 CSV | 42/42 流程检查通过 | 真实上传、金额、跨店铺关联、并发、回滚及回归流程 |
 | 经营查询示例 | 26/26 检查通过 | 之前的示例验证，使用测试库与本地临时路由 |
 | 经营查询真实服务 | 70/70 流程检查通过（2026-10-15） | 实际注册登录、两类 CSV 上传、手算汇总、历史价格、退款、日期边界、分页、无明细、权限、无写入副作用和清理 |
+| 标题草稿与确认 | 27项本地测试通过（2026-10-17） | 实际项目模型、内存SQLite与模拟模型；生成、权限、回滚、重复确认、旧标题冲突 |
+| 标题确认并发 | 三个真实MySQL场景通过（2026-10-17） | 同草稿并发回执一致、重试保留后续修改、不同草稿竞争；样本已清理 |
+| 前端基础 | 类型检查、构建及九组浏览器流程检查通过 | 页面账号数据为模拟；另验证开发代理向现有后端转发未登录请求得到401 |
+| 前端聊天 | 类型检查、构建及九组浏览器流程检查通过 | 模拟Agent接口；会话续接、切店隔离、引用、失败/401处理、手机布局 |
 
 流程检查数包含环境检查、数据清理或回归测试汇总项，不应相加为独立 pytest 用例总数。Week 2 的专项脚本和报告目前保存在本次协作的临时工作目录，尚未纳入项目仓库；执行 `test_main.py` 不会覆盖所有新增功能。专项测试使用独立临时账号或回滚事务，已清理样本。本次经营查询脚本为 `sellerpilot_analytics_verification.py`，报告为 `sellerpilot_analytics_results.json`，基础回归报告为 `sellerpilot_analytics_regression.xml`；均保存在协作工作目录。
 
 ## 下一步
 
-1. 定义并实现一个小范围、需要用户明确确认的运营动作（例如商品标题草稿确认后更新）；动作需有服务端校验、幂等处理和审计记录。
-2. 为 Agent、政策检索与会话流程补齐仓库内可重复执行的集成验收，并保留少量固定问题及预期依据。
-3. 完成最小演示界面、从空数据库开始的运行说明和最终端到端验收。
+1. 记录前端真实账号与GLM验收：低库存提问、追问、演示政策引用、资料不足和切店隔离。
+2. 接商品列表、标题草稿生成、前后对照与明确确认页面，展示409冲突和重复确认结果。
+3. 接固定CSV上传及经营查询页面，整理专项测试到仓库内，补齐从空库启动、部署与端到端演示。
 
-当前边界：模型不允许通过 Agent 修改数据；尚未实现标题修改草稿与确认、审计、界面或真实平台连接。政策内容只有共享演示资料。商品与库存通过商品接口维护，尚无商品/库存 CSV；SKU 仍为全局唯一；尚未完成最新全流程空库重建演练。带订单明细的商品受外键保护，删除时的友好冲突响应仍待收尾。
+当前边界：四条政策为共享自编示例；Agent工具仍只读，标题修改通过独立确认API。未接真实电商平台、SSE、历史会话恢复、通用审计系统或完整生产部署。SKU仍全局唯一，尚无商品/库存CSV；全流程空库重建、引用语义准确性和带明细商品删除的友好冲突响应仍待收尾。
 
 ## 开发与学习约定
 
@@ -317,3 +387,5 @@ python -m alembic check
 5. 是否访问或修改数据库，事务由谁提交，失败如何处理。
 
 每轮以一个能验证的小闭环为目标，并明确区分“代码已写”“示例已验证”和“项目实际接口已验收”。
+
+新增前端语法先结合当前请求流程解释，再继续扩展；本次已讲解useState、props、useRef、AbortController和pending.current。阶段完成时围绕刚完成模块进行真实面试式回顾，重点讨论设计、事务、并发和验证，不用语法填空，也不要求突然介绍整个项目。

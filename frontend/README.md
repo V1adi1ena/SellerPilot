@@ -1,12 +1,10 @@
-# SellerPilot 前端第一步：登录与店铺选择
+# SellerPilot 前端
 
-本阶段接入现有JSON登录接口、当前用户接口和自己的店铺列表。下一阶段会在已选店铺下加入运营问答与标题草稿确认。
+截至2026-10-17，已接入账号登录、当前用户、自己的店铺列表，以及当前店铺的Agent问答、追问和政策引用。用户已确认开发页面在5188运行成功；聊天组件已加入项目，真实GLM端到端页面验收仍待明确记录。商品管理、CSV上传与标题草稿确认页面尚待接入。
 
-## 放入项目并启动
+## 启动与停止
 
-将本目录的源文件放到 `D:/Project/SellerPilot/frontend/`，保留src目录结构。node_modules、dist和本次协作目录中的验证脚本不用复制。仓库原有.gitignore已忽略node_modules和dist。
-
-本机已核对Node v24.15.0满足所锁定Vite的版本要求。保持自己终端中的后端在127.0.0.1:8000运行，再在另一个PowerShell终端执行：
+后端由用户在可见终端保持运行，地址为127.0.0.1:8000。另开PowerShell终端：
 
 ```powershell
 cd D:\Project\SellerPilot\frontend
@@ -14,63 +12,72 @@ npm ci
 npm run dev
 ```
 
-打开 http://127.0.0.1:5173 。结束前端时，在这个终端按Ctrl+C。端口固定且已设置strictPort，5173被占用时会明确报错。
+打开 [店铺工作台](http://127.0.0.1:5188)。端口在vite.config.ts中设为5188，strictPort使端口占用时直接报错。停止前端时在该终端按Ctrl+C。已有依赖且锁文件未变时，后续只需npm run dev。生产构建命令为npm run build；当前开发代理不代替生产部署配置。
 
-使用已有注册账号登录。此阶段还没有注册与创建店铺页面，需要账号和店铺已在Swagger中创建。
+使用已注册账号；注册、创建店铺、商品维护和CSV导入目前仍使用后端Swagger。后端运行和迁移见 [项目README](../README.md)。
 
-## 最值得先读的文件
+## 文件与调用关系
 
-| 文件 | 作用 |
+| 文件 | 职责 |
 | --- | --- |
-| src/api.ts | 封装fetch、JWT请求头和后端错误；提供login/getCurrentUser/getStores |
-| src/App.tsx | 登录表单、身份加载、店铺列表、选中状态与退出 |
-| src/style.css | 页面布局、颜色、控件和手机布局 |
-| vite.config.ts | 开发端口及/api到后端的代理 |
-
-其余文件是运行入口与依赖配置：index.html提供root节点；src/main.tsx将App挂载到root；package.json定义依赖和命令；package-lock.json锁定实际安装；tsconfig.json约束TypeScript编译。
-
-## 每个函数参与什么
-
-| 函数 | 输入、输出、实现与调用位置 |
-| --- | --- |
-| request<T> | 输入接口路径和fetch选项，读取sessionStorage中的JWT，设置Authorization，发送/api请求，检查HTTP状态；返回JSON或抛ApiError。所有API包装函数共用它。T提供开发期返回类型提示，不对实际JSON进行运行时校验。 |
-| login | 输入用户名、密码，POST JSON到/auth/login，返回access_token/token_type；handleLogin调用。 |
-| getCurrentUser | 输入取消信号，GET/auth/me，返回User；登录后或页面恢复时调用。 |
-| getStores | 输入取消信号，GET/stores?limit=100，返回Store列表；后端负责用户隔离，页面不根据owner_id自己认定权限。 |
-| App | React组件，维护账号、店铺、选中项、加载状态与错误，返回页面结构；main.tsx挂载它。 |
-| handleLogin | 接收表单提交事件，阻止浏览器默认跳页，调用login；成功只保存JWT，清空密码，更新token状态。 |
-| handleLogout | 清除当前标签页JWT及组件里的用户、店铺和选择状态，切回登录页；不调用服务端JWT撤销接口。 |
-
-App中的useEffect在token或刷新计数变化时重新读取身份和店铺。两个查询可独立进行，所以用Promise.all一起等待；AbortController在退出或新一轮加载时取消旧请求，防止旧结果覆盖新状态。React开发模式StrictMode可能执行一次“启动、清理、再启动”，这里的查询是只读且支持取消的。
-
-useState保存页面状态；调用setToken、setStores、setSelectedId等更新函数后，React会重新渲染相应界面。选店铺按钮只更新selectedId，目前不发起经营查询或修改。
-
-## 请求和身份
+| index.html / src/main.tsx | 提供root节点，挂载React App并加载样式 |
+| src/App.tsx | 登录表单、账号和店铺加载、当前店铺选择、退出及登录过期处理 |
+| src/AgentChat.tsx | 当前店铺问答、会话ID、发送状态、引用展示与请求清理 |
+| src/api.ts | fetch公共封装、JWT、错误类及四个API包装函数 |
+| src/style.css | 页面布局、问答展示和手机适配 |
+| vite.config.ts | 开发端口5188、/api请求代理 |
+| package.json / package-lock.json / tsconfig.json | 依赖、命令、安装版本与类型检查 |
 
 ```text
-浏览器 fetch /api/auth/login
-  -> Vite移除/api，转发到127.0.0.1:8000/auth/login
-  -> FastAPI返回JWT
-  -> 当前标签页sessionStorage保存JWT
-  -> 后续请求附Authorization: Bearer ...
-  -> 后端校验JWT并返回该用户的店铺
+登录表单 -> handleLogin -> login -> request -> FastAPI登录接口
+保存JWT -> App的useEffect -> getCurrentUser/getStores -> 显示店铺
+选择店铺 -> AgentChat -> handleSend -> askAgent -> request -> 后端Agent
+回答成功 -> 保存conversation_id并追加问答 -> 下次提问续接会话
 ```
 
-模型API Key始终留在后端.env，前端只持有登录JWT。sessionStorage用于在同一标签页刷新后继续使用JWT，不保存密码；打开页面时仍向后端验证身份，401会清除凭证并要求重新登录。退出仅清除浏览器当前登录状态，已签发JWT仍按原后端规则到期失效。关闭标签页会结束该标签页的存储会话；浏览器恢复或复制标签页行为可能影响存储恢复，不能把关页视为服务端撤销。
+## API与函数
 
-开发代理让前端在同源/api地址发请求，本轮不需要修改后端CORS。该代理只供Vite开发服务使用，生产部署还需后续配置同域API转发。浏览器保存的JWT按来源隔离，请始终使用同一个127.0.0.1:5173地址。
+| 函数 | 输入与输出、所在流程 |
+| --- | --- |
+| request<T> | 接收路径和fetch选项，附加JWT、检查HTTP状态，返回JSON或抛错；T只提供开发期类型提示，不校验真实JSON |
+| login | 用户名/密码 -> POST /auth/login -> JWT |
+| getCurrentUser | 取消信号 -> GET /auth/me -> User |
+| getStores | 取消信号 -> GET /stores?limit=100 -> Store数组；店铺归属由后端控制 |
+| askAgent | 店铺ID、问题、取消信号、可选会话ID -> POST /store/{store_id}/agent/query -> AgentReply |
+| handleLogin / handleLogout | 保存JWT和清空密码，或清除标签页JWT与账号、店铺状态 |
+| App的useEffect | 登录或刷新店铺时并行加载身份和店铺，清理过时的读取请求 |
+| AgentChat | 接收当前店铺及登录过期回调，保存聊天状态并返回JSX页面 |
+| handleSend | 清理问题空白、阻止重复发送、请求回答；成功后追加问答、保存会话ID，失败保留输入与已有问答，401交父组件退出 |
+| handleNewConversation | 清空页面问答、输入、错误和会话ID；不删除后端已保存会话 |
 
-## 验收
+浏览器发送 `/api/...`，开发代理去掉/api后转发到127.0.0.1:8000。Agent接口沿用单数store路径，其余已有店铺接口多为复数stores。首次提问省略conversation_id；成功后记住后端返回值，追问携带该ID。页面不上传一整份任意聊天历史，后端自行读取有限历史。
 
-1. 已有账号登录后能看到自己的店铺；用户名/密码错误时留在登录页并显示后端提示。
-2. 多家店铺可切换选中项；一家店铺会自动选中。没有店铺时显示空状态。当前最多显示前100家店铺，不声称是全部店铺。
-3. 刷新页面后，未过期JWT自动重新验证；店铺选择本身没有持久化，多店铺时需要重新选择。
-4. 退出后回到登录表单，原用户与店铺不再显示。
-5. JWT过期返回401后要求重新登录；服务暂不可用时显示错误，可以刷新店铺重试。
+## AgentChat状态与关键语法
 
-本阶段已通过TypeScript检查和Vite生产构建。浏览器验证结果及截图位于协作工作目录的sellerpilot_frontend_verification目录，具体区分真实后端代理检查与模拟账号数据场景。暂存前端未安装到实际项目，本轮不改后端代码。
+| 项目 | 含义 |
+| --- | --- |
+| props | 父组件传入的store和onSessionExpired回调 |
+| useState | 保存question、turns、conversationId、sending和error；更新函数安排重新渲染，当前函数里的旧值不会立即改写 |
+| useRef / pending | 跨重新渲染保留同一个引用容器，修改current不会触发页面重画 |
+| pending.current | 保存当前请求的AbortController；非空时阻止再次发送 |
+| controller | 每次请求创建的浏览器控制器，signal传给fetch，abort发出取消通知 |
+| effect清理函数 | 组件卸载时调用pending.current?.abort，取消浏览器等待；代码也检查aborted以忽略旧结果 |
+| 组件key | 按用户ID和店铺ID确定聊天组件身份，切店时重建状态，避免复用上家店铺会话 |
 
-## 官方参考
+setTurns(previous => [...previous, newTurn])创建新的问答数组。turns只追加成功问答；发送失败时保留输入。页面用普通文本展示回答和原文，details/summary负责展开引用。政策资料不足时显示后端提示及标记，引用合法不等于答案语义一定准确。
 
-- Vite入门：https://vite.dev/guide/
-- React与TypeScript：https://react.dev/learn/typescript
+## 登录与会话边界
+
+JWT保存在当前标签页sessionStorage中，刷新后重新验证身份，不存密码；模型API Key只留在后端.env。退出只清理浏览器状态，已签发JWT按后端到期规则失效，没有服务端撤销功能。浏览器存储按来源区分，继续使用127.0.0.1:5188。
+
+刷新页面、退出或切换店铺时清空当前页面聊天；成功刷新同一店铺列表则保留聊天组件。后端已保存的会话仍存在，但目前没有历史列表或恢复功能。“新对话”只让下一次请求不带旧会话ID。
+
+AbortController停止浏览器等待，不保证终止后端已经开始的模型请求或事务。整个问答请求没有客户端幂等ID，网络中断后人工重试可能再次运行。当前展示一次完整HTTP回复，尚未接SSE逐字输出。
+
+## 验证与下次停点
+
+已通过TypeScript检查和Vite生产构建。前端基础、聊天各有九组浏览器流程检查；账号与Agent数据使用模拟接口，覆盖错误、401、追问、切店旧回复隔离、引用纯文本展示、重复提交和手机布局。基础阶段另对实际后端验证了未登录请求经代理返回401。
+
+报告和截图位于本次协作目录的sellerpilot_frontend_verification与sellerpilot_frontend_chat_verification，尚未纳入项目仓库。上述结果不是完整真实GLM页面验收，本轮文档更新没有重跑测试。
+
+下次先用真实账号检查低库存提问、追问、演示政策引用与切店；随后接商品列表和标题草稿生成、预览、明确确认页面。
