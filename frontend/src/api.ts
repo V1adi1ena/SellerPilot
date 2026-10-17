@@ -61,3 +61,29 @@ export function getCurrentUser(signal: AbortSignal): Promise<User> {
 export function getStores(signal: AbortSignal): Promise<Store[]> {
   return request('/stores?limit=100', { signal })
 }
+
+export interface PolicyCitation {
+  chunk_id: string
+  title: string
+  section: string
+  text: string
+  document_version: string
+}
+
+export interface AgentReply {
+  answer: string
+  citations: PolicyCitation[]
+  policy_status?: 'answered' | 'insufficient_evidence'
+  conversation_id: number
+  conversation_version: number
+}
+
+export function askAgent(
+  storeId: number, message: string, signal: AbortSignal, conversationId?: number,
+): Promise<AgentReply> {
+  return request(`/store/${storeId}/agent/query`, {
+    method: 'POST',
+    body: JSON.stringify({ message, conversation_id: conversationId }),
+    signal,
+  })
+}

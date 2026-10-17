@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ApiError, getCurrentUser, getStores, login, TOKEN_KEY } from './api'
 import type { Store, User } from './api'
+import AgentChat from './AgentChat'
 
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_KEY) ?? '')
@@ -146,6 +147,14 @@ export default function App() {
                 <p>{selectedStore.platform === 'amazon' ? 'Amazon' : selectedStore.platform === 'shopify' ? 'Shopify' : selectedStore.platform}</p>
               </aside>}
             </>}
+            {selectedStore && user && <AgentChat
+              key={`${user.id}:${selectedStore.id}`}
+              store={selectedStore}
+              onSessionExpired={() => {
+                handleLogout()
+                setError('登录已过期，请重新登录。')
+              }}
+            />}
           </section>
         )}
       </main>
