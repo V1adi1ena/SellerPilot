@@ -39,6 +39,16 @@ from conversations import (
     ConversationNotFoundError,
     run_conversation_agent,
 )
+from title_drafts import (
+    ProductNotFoundError,
+    TitleDraftError,
+    TitleDraftSaveError,
+    TitleDraftConflictError,
+    TitleDraftNotFoundError,
+    create_product_title_draft,
+    get_product_title_draft,
+    confirm_product_title_draft,
+)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -130,6 +140,14 @@ class UserLogin(BaseModel):
 class TokenRead(BaseModel):
     access_token: str
     token_type: str
+class AgentQuestion(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    message: str=Field(min_length=1, max_length=2000)
+    conversation_id:int|None=Field(default=None, ge=1, strict=True)
+
+class TitleDraftConfirmation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirmed: bool = Field(strict=True)
 
 def owned_products_query(user_id:int):
     return (select(Product)
@@ -526,10 +544,6 @@ def get_product_sales(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-class AgentQuestion(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
-    message: str=Field(min_length=1, max_length=2000)
-    conversation_id:int|None=Field(default=None, ge=1, strict=True)
 
 
 # query_store_agent        接收请求，取得登录用户和地址中的店铺编号
@@ -567,4 +581,63 @@ def query_store_agent(
     except (ModelError, AgentError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     
-    
+
+@app.post("/stores/{store_id}/products/{product_id}/title-drafts", status_code=201)
+def generate_product_title_draft(
+    store_id: int = Path(ge=1),
+    product_id: int = Path(ge=1),
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return create_product_title_draft(
+            session,
+            user_id=current_user.id,
+            store_id=store_id,
+            product_id=product_id,
+        )
+    except (StoreNotFoundError, ProductNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ModelError, TitleDraftError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except TitleDraftSaveError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+@app.get("/stores/{store_id}/title-drafts/{draft_id}")
+def read_product_title_draft(
+    store_id: int = Path(ge=1),
+    draft_id: int = Path(ge=1),
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return get_product_title_draft(
+            session, user_id=current_user.id, store_id=store_id, draft_id=draft_id,
+        )
+    except (StoreNotFoundError, TitleDraftNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/stores/{store_id}/title-drafts/{draft_id}/confirm")
+def apply_product_title_draft(
+    body: TitleDraftConfirmation,
+    store_id: int = Path(ge=1),
+    draft_id: int = Path(ge=1),
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return confirm_product_title_draft(
+            session, user_id=current_user.id, store_id=store_id,
+            draft_id=draft_id, confirmed=body.confirmed,
+        )
+    except (StoreNotFoundError, TitleDraftNotFoundError, ProductNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TitleDraftConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TitleDraftSaveError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+

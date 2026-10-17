@@ -1,5 +1,5 @@
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON, Numeric, String, ForeignKey,
@@ -187,4 +187,37 @@ class AgentConversation(Base):
     )
     history: Mapped[list[dict]] = mapped_column(JSON, default=list)
     version: Mapped[int] = mapped_column(default=0, server_default="0")
+
+
+class ProductTitleDraft(Base):
+    __tablename__ = "product_title_drafts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    store_id: Mapped[int] = mapped_column()
+    product_id: Mapped[int] = mapped_column()
+    created_by: Mapped[int] = mapped_column(
+        ForeignKey("users.id", name="fk_title_drafts_created_by"),
+    )
+    original_title: Mapped[str] = mapped_column(String(200))
+    proposed_title: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(),
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime())
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["store_id", "product_id"],
+            ["products.store_id", "products.id"],
+            name="fk_title_drafts_store_product",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'applied')",
+            name="ck_title_drafts_status",
+        ),
+    )
 
