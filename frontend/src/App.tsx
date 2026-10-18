@@ -5,6 +5,7 @@ import type { Store, User } from './api'
 import AgentChat from './AgentChat'
 import ProductTitles from './ProductTitles'
 import CsvImports from './CsvImports'
+import StoreOperations from './StoreOperations'
 
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_KEY) ?? '')
@@ -166,6 +167,14 @@ export default function App() {
               }}
             />}
             {selectedStore && user && <CsvImports
+              key={`${user.id}:${selectedStore.id}`}
+              store={selectedStore}
+              onSessionExpired={() => {
+                handleLogout()
+                setError('登录已过期，请重新登录。')
+              }}
+            />}
+            {selectedStore && user && <StoreOperations
               key={`${user.id}:${selectedStore.id}`}
               store={selectedStore}
               onSessionExpired={() => {

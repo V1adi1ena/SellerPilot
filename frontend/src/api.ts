@@ -164,12 +164,75 @@ export interface ImportResult {
 export function importCsv(
   storeId: number, kind: ImportKind, file: File, signal: AbortSignal,
 ): Promise<ImportResult> {
-  // File是浏览器读取的文件对象，用FormData传递文件字节，而不是JSON.stringify。
+  // File是浏览器读取的文件对象，用FormData传递文件字节，而不是JSON.stringify
   const body = new FormData()
-  // 字段名必须与后端UploadFile参数file一致。
+  // 字段名必须与后端UploadFile参数file一致
   body.append('file', file)
-  // request复用JWT和错误处理；文件请求的Content-Type留给浏览器生成。
+  // request复用JWT和错误处理；文件请求的Content-Type留给浏览器生成
   return request(`/stores/${storeId}/imports/${kind}`, {
     method: 'POST', body, signal,
   })
+}
+
+export type OrderStatus = 'pending' | 'paid' | 'shipped' | 'cancelled'
+
+export interface SalesGroup {
+  currency: string
+  order_count: number
+  units_sold: number
+  // 后端用字符串传递精确金额，展示时不转成浮点数，也不跨币种相加。
+  gross_sales: string
+  refund_amount: string
+  net_sales: string
+  orders_without_items: number
+}
+
+interface QueryContext {
+  store_id: number
+  start_at: string
+  end_at: string
+  data_version: number
+}
+
+export interface SalesSummary extends QueryContext {
+  included_statuses: OrderStatus[]
+  has_orders_without_items: boolean
+  by_currency: SalesGroup[]
+}
+
+export interface OrderPage extends QueryContext {
+  status_filter: OrderStatus | null
+  limit: number
+  offset: number
+  has_more: boolean
+  items: {
+    id: number
+    external_order_id: string
+    ordered_at: string
+    status: OrderStatus
+    currency: string
+  }[]
+}
+
+export interface SalesRange {
+  start_at: string
+  end_at: string
+}
+
+export function getSalesSummary(
+  storeId: number, range: SalesRange, signal: AbortSignal,
+): Promise<SalesSummary> {
+  // URLSearchParams负责转义时间中的冒号、加号等字符，避免手工拼接破坏时区。
+  const query = new URLSearchParams({ ...range })
+  return request(`/stores/${storeId}/sales/summary?${query}`, { signal })
+}
+
+export function getOrderPage(
+  storeId: number, range: SalesRange, status: OrderStatus | '',
+  offset: number, signal: AbortSignal,
+): Promise<OrderPage> {
+  const query = new URLSearchParams({ ...range, limit: '20', offset: String(offset) })
+  // “全部状态”表示不传status，而不是向后端发送空字符串。
+  if (status) query.set('status', status)
+  return request(`/stores/${storeId}/orders?${query}`, { signal })
 }
