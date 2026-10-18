@@ -28,17 +28,23 @@ export default function ProductTitles({ store, onSessionExpired }: Props) {
     setBusy(action)
     setError('')
     try {
+      // signal 从控制器传进了具体操作
       await operation(controller.signal)
-    } catch (cause) {
+    } 
+    // 捕获错误对象
+    catch (cause) {
+      // 如果错误是离开页面、切换店铺等取消操作引起的，就忽略，不显示成操作失败
       if (controller.signal.aborted) return
-      if (cause instanceof ApiError && cause.status === 401) {
-        onSessionExpired()
-      } else {
+      // 如果是接口错误类，就认定登录凭证无效，通知父组件退出登录
+      if (cause instanceof ApiError && cause.status === 401) onSessionExpired()
+      else {
         if (cause instanceof ApiError && cause.status === 409) setConflict(true)
         setError(cause instanceof Error ? cause.message : '操作失败，请稍后重试。')
-      }
-    } finally {
+      }}
+    finally {
+      // 清理本次操作的控制器
       if (pending.current === controller) pending.current = null
+      // 把页面恢复为空闲状态
       if (!controller.signal.aborted) setBusy(null)
     }
   }
@@ -46,7 +52,9 @@ export default function ProductTitles({ store, onSessionExpired }: Props) {
   async function loadProducts(signal: AbortSignal) {
     const items = await getProducts(store.id, signal)
     if (signal.aborted) return
+    // 刷新页面商品列表
     setProducts(items)
+    // 查看当前选中的商品还在不在新列表里，若不在就把旧勾选状态置空
     if (!items.some((product) => product.id === selectedId)) {
       setSelectedId(items[0]?.id ?? null)
       setDraft(null)
@@ -64,8 +72,11 @@ export default function ProductTitles({ store, onSessionExpired }: Props) {
   }, [store.id])
 
   function handleSelectProduct(productId: number) {
+    // 正在处理请求或者点击的就是已经选中的商品
     if (pending.current || productId === selectedId) return
+    // 选中新的商品
     setSelectedId(productId)
+    // 清除旧的商品的勾选状态
     setDraft(null)
     setReviewed(false)
     setConflict(false)
@@ -73,11 +84,14 @@ export default function ProductTitles({ store, onSessionExpired }: Props) {
   }
 
   function handleGenerate() {
+    // 没有选中的商品则直接结束
     if (!selectedProduct) return
     runAction('generating', async (signal) => {
+      // 清理旧的预览
       setDraft(null)
       setReviewed(false)
       setConflict(false)
+      // 请求新的草稿
       const created = await generateTitleDraft(store.id, selectedProduct.id, signal)
       if (!signal.aborted) setDraft(created)
     })

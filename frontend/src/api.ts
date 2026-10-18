@@ -17,8 +17,15 @@ interface LoginResult {
   token_type: string
 }
 
+export interface CsvIssue {
+  row: number | null
+  field: string
+  reason: string
+}
+
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  // 普通接口没有行级错误时使用空数组；CSV接口保留明细供页面逐条展示。
+  constructor(public status: number, message: string, public issues: CsvIssue[] = []) {
     super(message)
   }
 }
@@ -28,7 +35,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
   const token = sessionStorage.getItem(TOKEN_KEY)
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  if (options.body) headers.set('Content-Type', 'application/json')
+  // JSON请求仍设置JSON类型；FormData由浏览器生成multipart类型和boundary。
+  // boundary是文件各部分的分隔标识，手动设置JSON头或仅写multipart都会破坏解析。
+  if (options.body && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
 
   let response: Response
   try {
@@ -39,10 +50,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => null)
-    const message = typeof payload?.detail === 'string'
-      ? payload.detail
+    // FastAPI普通错误的detail是字符串；CSV错误是包含message/errors的对象。
+    const detail = payload?.detail
+    const message = typeof detail === 'string' ? detail
+      : typeof detail?.message === 'string' ? detail.message
       : `请求失败（${response.status}），请稍后重试。`
-    throw new ApiError(response.status, message)
+    // 保留后端提供的行号、字段和原因，而不是把整个对象压成一条笼统提示。
+    const issues: CsvIssue[] = Array.isArray(detail?.errors) ? detail.errors : []
+    throw new ApiError(response.status, message, issues)
   }
   return response.json() as Promise<T>
 }
@@ -134,5 +149,27 @@ export function confirmTitleDraft(
 ): Promise<TitleDraft> {
   return request(`/stores/${storeId}/title-drafts/${draftId}/confirm`, {
     method: 'POST', body: JSON.stringify({ confirmed: true }), signal,
+  })
+}
+
+export type ImportKind = 'orders' | 'order-items'
+
+export interface ImportResult {
+  import_job_id: number
+  row_count: number
+  data_version: number
+  duplicate: boolean
+}
+
+export function importCsv(
+  storeId: number, kind: ImportKind, file: File, signal: AbortSignal,
+): Promise<ImportResult> {
+  // File是浏览器读取的文件对象，用FormData传递文件字节，而不是JSON.stringify。
+  const body = new FormData()
+  // 字段名必须与后端UploadFile参数file一致。
+  body.append('file', file)
+  // request复用JWT和错误处理；文件请求的Content-Type留给浏览器生成。
+  return request(`/stores/${storeId}/imports/${kind}`, {
+    method: 'POST', body, signal,
   })
 }
