@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ApiError, confirmTitleDraft, generateTitleDraft, getProducts, getTitleDraft } from './api'
-import type { Product, Store, TitleDraft } from './api'
+import { ApiError, confirmTitleDraft, generateTitleDraft, getProducts, getTitleDraft } from '../../shared/api'
+import type { Product, Store, TitleDraft } from '../../shared/api'
 
 interface Props {
   store: Store

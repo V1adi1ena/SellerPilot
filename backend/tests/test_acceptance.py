@@ -12,9 +12,7 @@ from sqlalchemy import create_engine, delete, func, inspect, select
 from sqlalchemy.orm import Session
 
 # 同时支持在协作目录验证和复制到实际项目的 backend 后执行。
-BACKEND = Path(__file__).resolve().parent
-if not (BACKEND / "main.py").exists():
-    BACKEND = Path("D:/Project/SellerPilot/backend")
+BACKEND = Path(__file__).resolve().parents[1]
 load_dotenv(BACKEND.parent / ".env")
 sys.path.insert(0, str(BACKEND))
 from database import database_url, get_db
@@ -127,6 +125,10 @@ def test_business_acceptance(acceptance_client):
         assert session.scalar(select(func.count()).select_from(OrderItem).where(
             OrderItem.store_id == sid)) == 4
     assert send("GET", summary_path, headers=a, params=params) == baseline
+    sales = send("GET", f"/stores/{sid}/sales/products", headers=a, params=params)
+    assert {item["sku"]: item["units_sold"] for item in sales["items"]} == {products[0]["sku"]: 2, products[1]["sku"]: 3}
+    send("DELETE", f"/products/{products[0]['sku']}", headers=a, status=409)
+    assert send("GET", f"/products/{products[0]['sku']}", headers=a)["stock"] == 0
 
     # 只模拟模型响应，真实Agent循环、工具校验、SQL查询及对话持久化仍执行。
     tool_reply = {"role": "assistant", "content": None, "tool_calls": [{"id": "accept-tool", "type": "function", "function": {
@@ -153,3 +155,11 @@ def test_business_acceptance(acceptance_client):
     send("POST", f"/stores/{sid}/title-drafts/{other_draft['draft_id']}/confirm", headers=a, status=409, json={"confirmed": True})
     assert send("GET", f"/products/{products[0]['sku']}", headers=a)["title"] == "Kitchen Storage Jar P1"
     assert send("GET", summary_path, headers=a, params=params) == baseline
+    # 完整覆盖编辑价格、币种、库存以及未关联商品的204删除响应。
+    disposable = send("POST", "/products", status=201, headers=a, json={
+        "sku": prefix.replace("_", "-") + "FREE", "title": "Disposable", "price": "1.00", "currency": "USD", "stock": 1, "store_id": sid})
+    edited = send("PUT", f"/products/{disposable['sku']}", headers=a, json={"title": "Edited", "price": "12.34", "currency": "EUR", "stock": 7})
+    assert (edited["price"], edited["currency"], edited["stock"]) == ("12.34", "EUR", 7)
+    response = client.delete(f"/products/{disposable['sku']}", headers=a)
+    assert response.status_code == 204 and response.content == b""
+    send("GET", f"/products/{disposable['sku']}", headers=a, status=404)

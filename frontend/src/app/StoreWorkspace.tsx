@@ -1,11 +1,10 @@
 import { useState } from 'react'
-import type { Store } from './api'
-import AgentChat from './AgentChat'
-import StoreOperations from './StoreOperations'
-import ProductInventory from './ProductInventory'
-import CsvImports from './CsvImports'
-import ProductTitles from './ProductTitles'
-import './workspace.css'
+import type { Store } from '../shared/api'
+import AgentChat from '../features/chat/AgentChat'
+import StoreOperations from '../features/analytics/StoreOperations'
+import ProductInventory from '../features/products/ProductManager'
+import CsvImports from '../features/imports/CsvImports'
+import ProductTitles from '../features/titles/ProductTitles'
 
 interface Props {
   store: Store
@@ -17,7 +16,7 @@ type PanelId = 'chat' | 'operations' | 'inventory' | 'imports' | 'titles'
 const PANELS: { id: PanelId; label: string }[] = [
   { id: 'chat', label: '运营问答' },
   { id: 'operations', label: '经营数据' },
-  { id: 'inventory', label: '商品与库存' },
+  { id: 'inventory', label: '商品管理' },
   { id: 'imports', label: 'CSV 导入' },
   { id: 'titles', label: '标题审核' },
 ]

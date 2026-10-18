@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ApiError, askAgent } from './api'
-import type { AgentReply, Store } from './api'
+import { ApiError, askAgent } from '../../shared/api'
+import type { AgentReply, Store } from '../../shared/api'
 
 interface Props {
   store: Store

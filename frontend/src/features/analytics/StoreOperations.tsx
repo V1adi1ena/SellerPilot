@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ApiError, getOrderPage, getSalesSummary } from './api'
-import type { OrderPage, OrderStatus, SalesRange, SalesSummary, Store } from './api'
-import './operations.css'
+import { ApiError, getOrderPage, getSalesSummary, getProductSales } from '../../shared/api'
+import type { OrderPage, OrderStatus, SalesRange, SalesSummary, Store, ProductSalesPage } from '../../shared/api'
 
 interface Props {
   store: Store
@@ -16,6 +15,7 @@ interface QueryResult {
   status: OrderStatus | ''
   summary: SalesSummary
   orders: OrderPage
+  productSales: ProductSalesPage
 }
 
 const statusLabels: Record<OrderStatus, string> = {
@@ -68,7 +68,7 @@ export default function StoreOperations({ store, onSessionExpired }: Props) {
     }
   }, [store.id])
 
-  async function loadOperations(offset: number) {
+  async function loadOperations(offset: number, productOffset = 0) {
     // ref立即加锁；setLoading要等React重新渲染，单靠按钮禁用挡不住快速连点。
     if (pending.current) return
     const controller = new AbortController()
@@ -77,21 +77,22 @@ export default function StoreOperations({ store, onSessionExpired }: Props) {
     setError('')
     try {
       const range = buildRange(startDay, endDay)
-      // 两个独立GET并发读取。订单状态筛选只传给订单接口，汇总规则由后端决定。
-      const [summary, orders] = await Promise.all([
+      // 三个GET并发查询；订单和商品销量分别分页，状态筛选只影响订单。
+      const [summary, orders, productSales] = await Promise.all([
         getSalesSummary(store.id, range, controller.signal),
         getOrderPage(store.id, range, status, offset, controller.signal),
+        getProductSales(store.id, range, productOffset, controller.signal),
       ])
       if (controller.signal.aborted) return
-      // 两个请求不是同一数据库快照。发现版本不同就拒绝拼成一份结果，提示重查。
-      if (summary.data_version !== orders.data_version) {
+      // 三个请求不是同一数据库快照。发现版本不同就拒绝拼成一份结果，提示重查。
+      if (summary.data_version !== orders.data_version || summary.data_version !== productSales.data_version) {
         throw new Error('查询期间店铺数据发生了变化，请重新查询。')
       }
       // 一次保存完整结果及其筛选快照，避免一半新数据、一半旧数据。
-      setResult({ startDay, endDay, status, summary, orders })
+      setResult({ startDay, endDay, status, summary, orders, productSales })
     } catch (cause) {
       if (controller.signal.aborted) return
-      // 其中一个请求失败后取消另一个，避免无用的请求继续等待。
+      // 其中一个请求失败后取消其他请求，避免无用的请求继续等待。
       controller.abort()
       setResult(null)
       if (cause instanceof ApiError && cause.status === 401) onSessionExpired()
@@ -162,10 +163,26 @@ export default function StoreOperations({ store, onSessionExpired }: Props) {
           </div>}
         <nav className="operations-pagination" aria-label="订单分页">
           <button className="quiet-button" disabled={loading || criteriaChanged || result.orders.offset === 0}
-            onClick={() => void loadOperations(Math.max(0, result.orders.offset - result.orders.limit))}>上一页</button>
+            onClick={() => void loadOperations(Math.max(0, result.orders.offset - result.orders.limit), result.productSales.offset)}>上一页</button>
           <span>第 {Math.floor(result.orders.offset / result.orders.limit) + 1} 页，本页 {result.orders.items.length} 条</span>
           <button className="quiet-button" disabled={loading || criteriaChanged || !result.orders.has_more}
-            onClick={() => void loadOperations(result.orders.offset + result.orders.limit)}>下一页</button>
+            onClick={() => void loadOperations(result.orders.offset + result.orders.limit, result.productSales.offset)}>下一页</button>
+        </nav>
+        <h3>商品销量</h3>
+        <p className="hint">按销量降序；使用订单成交单价计算，当前商品调价不改变历史销售额。</p>
+        {result.productSales.items.length === 0 ? <p className="hint">这段日期没有商品销量记录。</p> :
+          <div className="operations-table" role="region" aria-label="商品销量表" tabIndex={0}><table>
+            <thead><tr><th>SKU / 商品名称</th><th>销量</th><th>订单数</th><th>币种</th><th>销售总额</th><th>退款</th><th>净销售额</th></tr></thead>
+            <tbody>{result.productSales.items.map(item => <tr key={`${item.product_id}:${item.currency}`}>
+              <td><strong>{item.sku}</strong><br />{item.title}</td><td>{item.units_sold}</td><td>{item.order_count}</td><td>{item.currency}</td>
+              <td>{item.gross_sales}</td><td>{item.refund_amount}</td><td>{item.net_sales}</td>
+            </tr>)}</tbody></table></div>}
+        <nav className="operations-pagination" aria-label="商品销量分页">
+          <button className="quiet-button" disabled={loading || criteriaChanged || result.productSales.offset === 0}
+            onClick={() => void loadOperations(result.orders.offset, Math.max(0, result.productSales.offset - result.productSales.limit))}>上一页</button>
+          <span>第 {Math.floor(result.productSales.offset / result.productSales.limit) + 1} 页</span>
+          <button className="quiet-button" disabled={loading || criteriaChanged || !result.productSales.has_more}
+            onClick={() => void loadOperations(result.orders.offset, result.productSales.offset + result.productSales.limit)}>下一页</button>
         </nav>
       </>}
     </section>

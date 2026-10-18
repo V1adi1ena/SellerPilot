@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ApiError, importCsv } from './api'
-import type { CsvIssue, ImportKind, ImportResult, Store } from './api'
+import { ApiError, importCsv } from '../../shared/api'
+import type { CsvIssue, ImportKind, ImportResult, Store } from '../../shared/api'
 
 interface Props {
   store: Store

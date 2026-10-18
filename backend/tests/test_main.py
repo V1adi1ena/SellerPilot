@@ -167,9 +167,9 @@ def test_handle_integrity_error(seller):
     sku = f"TEST-{uuid4().hex[:12]}"
 
     with patch( # 只能说明当出现IntegrityError时会返回409
-        "main.Session.commit",
+        "routers.products.Session.commit",
         side_effect=IntegrityError("INSERT", {}, Exception("test")),
-    ), patch("main.Session.rollback") as rollback_mock:
+    ), patch("routers.products.Session.rollback") as rollback_mock:
         response = client.post(
             "/products",
             json={

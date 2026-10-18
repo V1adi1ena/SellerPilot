@@ -4,6 +4,14 @@ SellerPilot 是面向跨境电商卖家的智能运营 Agent 学习项目，使�
 
 截至 **2026-10-18**，本地演示版已贯通登录选店、商品与低库存、CSV订单及明细导入、经营分析、GLM问答与政策引用、标题草稿审核和确认。React前端已整合五个导航模块，开发地址为 **http://127.0.0.1:5188**。用户逐步确认页面功能跑通，真实GLM提问、追问与政策引用已由用户确认。本轮另通过实际前端构建、独立MySQL测试库业务闭环验收；这不代表生产部署或全部模型回答的语义正确性已验收。
 
+## 控制台与接口补齐（2026-10-18）
+
+已补注册、创建店铺/详情、商品新增/详情/编辑/删除、商品销量与独立分页。现有21个业务接口均有前端调用入口，开发诊断接口不作为卖家菜单。视觉调整为深蓝侧栏、钴蓝操作色、紧凑白底表格与小圆角。
+
+main.py已拆为七组路由，HTTP模型与认证依赖分别归位；前端按app/features/shared/styles组织；测试、脚本和文档独立放置。启动入口和API路径保持不变。删除关联商品返回409并回滚，未关联删除的204由前端正确处理。
+
+OpenAPI兼容对比、9项独立MySQL测试和8组模拟浏览器流程通过。当前改版尚未由用户完成真实浏览器联动验收。功能覆盖、关键函数解释和目录详见 [接口覆盖与结构](docs/接口覆盖与结构.md)。代码重组前的备份保存在本次协作目录，不含.env与数据库数据。
+
 ## 当前进度与停点
 
 | 模块 | 当前状态 | 说明 |
@@ -27,7 +35,7 @@ SellerPilot 是面向跨境电商卖家的智能运营 Agent 学习项目，使�
 | 前端商品与库存 | 用户确认完成 | 店铺商品、后端低库存筛选、阈值边界和100条限制 |
 | 工作区导航 | 用户确认成功 | 五模块按需挂载；同店铺切模块保留状态，换店铺清理 |
 
-**当前停点：** 功能接入已完成，进入演示验收与交付收尾。本轮新增 `backend/test_acceptance.py`，用于独立测试库中的业务闭环回归；完整演示步骤与验证范围见 [演示验收](演示验收.md)。标题确认仍通过独立API执行，没有注册为模型工具。
+**当前停点：** 功能接入已完成，进入演示验收与交付收尾。本轮新增 `backend/tests/test_acceptance.py`，用于独立测试库中的业务闭环回归；完整演示步骤与验证范围见 [演示验收](docs/演示验收.md)。标题确认仍通过独立API执行，没有注册为模型工具。
 
 ## 技术栈
 
@@ -37,49 +45,27 @@ Python、FastAPI、Pydantic、SQLAlchemy、PyMySQL、MySQL 8.4、Alembic、pytes
 
 ```text
 SellerPilot/
+├── README.md / pytest.ini / compose.yaml / alembic.ini
+├── docs/                       # 技术方案、演示验收、接口覆盖与结构
 ├── backend/
-│   ├── main.py                 # 请求/响应模型、认证依赖、HTTP 接口
-│   ├── database.py             # 数据库连接、Base、get_db
-│   ├── models.py               # 用户、店铺、商品、订单、明细、导入记录、会话与标题草稿
-│   ├── services.py             # 店铺授权与低库存业务函数
-│   ├── imports.py              # 订单 CSV 解析与事务导入
-│   ├── order_items_import.py   # 明细 CSV 解析、关联校验与事务导入
-│   ├── analytics.py            # 订单查询、销售汇总、商品销量
-│   ├── llm.py                  # GLM 配置读取、HTTP 请求与错误归一化
-│   ├── agent.py                # 工具白名单、参数校验、调用循环与政策响应检查
-│   ├── conversations.py        # 对话历史读取、并发版本控制与事务保存
-│   ├── policy_search.py        # 共享演示政策的词面检索
-│   ├── policy_service.py       # 政策检索前的店铺归属校验
-│   ├── title_drafts.py         # 标题草稿生成、预览、确认与事务
-│   ├── secuity.py              # 密码哈希与 JWT 工具（当前文件名）
-│   ├── test_main.py            # 基础接口自动化测试
-│   ├── test_acceptance.py      # 独立测试库的业务闭环，模拟模型响应
-│   ├── requirements.txt
-│   └── migrations/            # Alembic 配置入口与版本脚本
-├── frontend/
-│   ├── src/
-│   │   ├── main.tsx           # React挂载入口
-│   │   ├── App.tsx            # 登录、账号与当前店铺
-│   │   ├── StoreWorkspace.tsx # 五模块导航、按需挂载与状态保留
-│   │   ├── AgentChat.tsx      # 当前店铺问答、引用与请求清理
-│   │   ├── ProductTitles.tsx  # 标题草稿生成、审核与确认
-│   │   ├── CsvImports.tsx     # 文件上传、去重回执和行级错误
-│   │   ├── StoreOperations.tsx # 日期、销售汇总与订单分页
-│   │   ├── ProductInventory.tsx # 商品与低库存查询
-│   │   ├── api.ts             # fetch、JWT及API封装
-│   │   └── style.css          # 布局和手机适配
-│   ├── index.html
-│   ├── package.json
-│   ├── package-lock.json
-│   ├── tsconfig.json
-│   ├── vite.config.ts         # 5188开发端口与/api代理
-│   └── README.md              # 前端流程、函数与验收说明
-├── alembic.ini
-├── compose.yaml                # MySQL 容器与持久化卷
-├── .env.example
-├── .gitignore
-├── README.md
-└── 技术方案.md
+│   ├── main.py                 # 应用入口及路由注册
+│   ├── schemas.py              # HTTP请求/响应模型
+│   ├── dependencies.py         # JWT及商品授权依赖
+│   ├── routers/                # 七组业务HTTP路由
+│   ├── tests/                  # 基础回归与业务闭环
+│   ├── scripts/                # 手动模型连接检查
+│   ├── migrations/             # 数据库迁移，位置不变
+│   ├── database.py / models.py # 数据库与ORM模型
+│   └── 业务模块.py              # 导入、分析、Agent、政策、会话、标题
+└── frontend/
+    ├── src/
+    │   ├── main.tsx
+    │   ├── app/                # 账号/店铺及工作区布局
+    │   ├── features/           # auth/stores/products/analytics/chat/imports/titles
+    │   ├── shared/api/         # fetch客户端及七个业务API模块
+    │   ├── shared/types.ts     # 共用数据类型
+    │   └── styles/             # tokens、基础和模块样式
+    └── README.md / package.json / vite.config.ts
 ```
 
 ## 请求流程与函数分工
@@ -166,7 +152,7 @@ npm ci
 npm run dev
 ```
 
-打开 [前端工作台](http://127.0.0.1:5188)，使用已注册账号登录；前端当前还没有注册与创建店铺页面。前后端开发进程分别在各自终端按Ctrl+C停止。5188是当前配置，启用strictPort后端口被占用会直接报错。
+打开 [前端工作台](http://127.0.0.1:5188)，使用已注册账号登录；前端已提供注册、创建店铺、商品详情/新增/编辑/删除以及商品销量页面。前后端开发进程分别在各自终端按Ctrl+C停止。5188是当前配置，启用strictPort后端口被占用会直接报错。
 
 模型配置位于项目根目录.env：LLM_BASE_URL、LLM_MODEL、LLM_API_KEY由后端读取。前端只保存登录JWT，模型密钥不写入前端代码或Vite环境变量。前端详细说明见 [frontend/README.md](frontend/README.md)。
 
@@ -326,9 +312,9 @@ MySQL通过FOR UPDATE读取当前记录并加锁，populate_existing刷新ORM缓
 
 ## 前端工作台
 
-App管理登录和当前店铺，StoreWorkspace提供运营问答、经营数据、商品与库存、CSV导入、标题审核五个入口。首次打开模块才挂载；同店铺切换用hidden隐藏已打开模块，保留聊天、草稿、文件选择和查询结果。在途请求可继续完成。账号或店铺改变时，工作区key改变，旧组件卸载、取消等待并清空页面状态。
+App管理登录和当前店铺，StoreManager提供建店和详情，StoreWorkspace提供运营问答、经营数据、商品管理、CSV导入、标题审核五个入口。商品管理可新增、读取详情、编辑资料/库存、明确确认删除；经营数据包含商品销量明细及独立分页。首次打开模块才挂载；同店铺切换用hidden隐藏已打开模块，保留聊天、草稿、文件选择和查询结果。在途请求可继续完成。账号或店铺改变时，工作区key改变，旧组件卸载、取消等待并清空页面状态。
 
-api.ts统一附带Bearer JWT、处理错误及CSV结构化行错误。FormData文件请求由浏览器生成multipart boundary。浏览器请求/api，由Vite开发代理转发到127.0.0.1:8000；生产环境仍需单独配置代理。
+shared/api/client.ts统一附带Bearer JWT、处理错误及CSV结构化行错误。FormData文件请求由浏览器生成multipart boundary。浏览器请求/api，由Vite开发代理转发到127.0.0.1:8000；生产环境仍需单独配置代理。
 
 经营查询页面按北京时间选择日期，包含结束当天，转成下一天零点作为后端不包含的上界。订单状态筛选只影响订单列表；销售汇总始终统计paid和shipped，金额保留后端精确字符串，按币种分别展示。缺明细与两接口数据版本不同均会提示。
 
@@ -358,12 +344,12 @@ python -c "import os; os.environ['DB_NAME'] = 'sellerpilot_test'; from alembic.c
 运行仓库内的基础测试和开发库迁移检查：
 
 ```powershell
-python -m pytest backend/test_main.py -q
+python -m pytest backend/tests/test_main.py -q
 python -m alembic current
 python -m alembic check
 ```
 
-以下保留历史阶段记录；2026-10-18新增验证见 [演示验收](演示验收.md)：8项原有测试和1项业务闭环测试通过，实际前端构建通过，运行中的前端模块加载200、未登录代理请求401。本轮未重跑真实GLM评测集。不同验证方式应分开理解：
+以下保留历史阶段记录；2026-10-18新增验证见 [演示验收](docs/演示验收.md)：8项原有测试和1项业务闭环测试通过，实际前端构建通过，运行中的前端模块加载200、未登录代理请求401。本轮未重跑真实GLM评测集。不同验证方式应分开理解：
 
 | 验证范围 | 最近记录 | 验证方式 |
 | --- | --- | --- |
@@ -385,9 +371,9 @@ python -m alembic check
 
 1. 按演示验收清单完成一次连贯演示，记录问题并准备简历项目说明。
 2. 若目标是部署，再单独补充空库重建、生产代理、密钥管理和运行维护验收。
-3. 按实际需要处理带明细商品删除的友好冲突提示；不为进度额外引入Redis等基础设施。
+3. 按实际需要处理更完整的数据维护与库存流水规则；不为进度额外引入Redis等基础设施。
 
-本地演示版主要功能已接入。尚未实现真实电商平台、SSE、历史会话恢复、通用审计、完整生产部署、商品/库存CSV和前端注册/建店/商品CRUD。SKU仍全局唯一。政策引用合法不等于语义正确，标题建议仍需人工审核。完整空库重建与生产部署尚未验收。
+本地演示版主要功能已接入。尚未实现真实电商平台、SSE、历史会话恢复、通用审计、完整生产部署、商品/库存CSV和店铺编辑/删除接口。SKU仍全局唯一。政策引用合法不等于语义正确，标题建议仍需人工审核。完整空库重建与生产部署尚未验收。
 
 ## 开发与学习约定
 
