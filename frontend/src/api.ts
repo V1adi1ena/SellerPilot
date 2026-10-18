@@ -130,6 +130,14 @@ export function getProducts(storeId: number, signal: AbortSignal): Promise<Produ
   return request(`/products?store_id=${storeId}&limit=100`, { signal })
 }
 
+export function getLowStockProducts(
+  storeId: number, threshold: number, signal: AbortSignal,
+): Promise<Product[]> {
+  // 让后端先按店铺和阈值筛选，再限制条数，不能在前端已取到的100个商品内筛选。
+  const query = new URLSearchParams({ threshold: String(threshold), limit: '100' })
+  return request(`/stores/${storeId}/products/low-stock?${query}`, { signal })
+}
+
 export function generateTitleDraft(
   storeId: number, productId: number, signal: AbortSignal,
 ): Promise<TitleDraft> {
