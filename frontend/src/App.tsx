@@ -2,11 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ApiError, getCurrentUser, getStores, login, TOKEN_KEY } from './api'
 import type { Store, User } from './api'
-import AgentChat from './AgentChat'
-import ProductTitles from './ProductTitles'
-import CsvImports from './CsvImports'
-import StoreOperations from './StoreOperations'
-import ProductInventory from './ProductInventory'
+import StoreWorkspace from './StoreWorkspace'
 
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_KEY) ?? '')
@@ -151,39 +147,8 @@ export default function App() {
                 <p>{selectedStore.platform === 'amazon' ? 'Amazon' : selectedStore.platform === 'shopify' ? 'Shopify' : selectedStore.platform}</p>
               </aside>}
             </>}
-            {selectedStore && user && <AgentChat
-              key={`${user.id}:${selectedStore.id}`}
-              store={selectedStore}
-              onSessionExpired={() => {
-                handleLogout()
-                setError('登录已过期，请重新登录。')
-              }}
-            />}
-            {selectedStore && user && <ProductTitles
-              key={`${user.id}:${selectedStore.id}`}
-              store={selectedStore}
-              onSessionExpired={() => {
-                handleLogout()
-                setError('登录已过期，请重新登录。')
-              }}
-            />}
-            {selectedStore && user && <CsvImports
-              key={`${user.id}:${selectedStore.id}`}
-              store={selectedStore}
-              onSessionExpired={() => {
-                handleLogout()
-                setError('登录已过期，请重新登录。')
-              }}
-            />}
-            {selectedStore && user && <StoreOperations
-              key={`${user.id}:${selectedStore.id}`}
-              store={selectedStore}
-              onSessionExpired={() => {
-                handleLogout()
-                setError('登录已过期，请重新登录。')
-              }}
-            />}
-            {selectedStore && user && <ProductInventory
+            {selectedStore && user && <StoreWorkspace
+              // 账号或店铺变化时，整个工作区重新创建，旧模块的状态和请求一起清理。
               key={`${user.id}:${selectedStore.id}`}
               store={selectedStore}
               onSessionExpired={() => {

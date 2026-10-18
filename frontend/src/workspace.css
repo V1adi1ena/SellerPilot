@@ -1,0 +1,12 @@
+.store-workspace { margin-top: 28px; }
+.workspace-navigation { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.workspace-navigation button { min-height: 46px; padding: 10px 8px; border: 1px solid transparent; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; color: #183447; background: transparent; font-size: 14px; }
+.workspace-navigation button:hover { background: #e0ecef; }
+.workspace-navigation button[aria-pressed="true"] { color: #06676d; background: white; border-color: var(--line); border-bottom-color: var(--accent); font-weight: 600; }
+.workspace-tip { margin: 14px 0 20px; }
+.workspace-page[hidden] { display: none; }
+.workspace-page > section { margin-top: 0; }
+@media (max-width: 760px) {
+  .workspace-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-navigation button:last-child { grid-column: 1 / -1; }
+}
